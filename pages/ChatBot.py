@@ -2,13 +2,13 @@ import streamlit as st
 import os
 import fitz  # PyMuPDF
 
-# LangChain (compatível com versões atuais)
+# LangChain
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 
-# OpenAI client
+# OpenAI
 from openai import OpenAI
 
 
@@ -17,6 +17,8 @@ st.set_page_config(page_title="Procedures Assistant", layout="wide")
 st.title("🛠️ Work Procedures Assistant")
 
 DOC_DIR = "documents"
+IMAGE_WIDTH = 450
+
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 
@@ -29,6 +31,21 @@ STEP_IMAGE_MAP = {
 }
 
 
+# ================= IMAGE QUERY MAP (direct photo requests) =================
+IMAGE_QUERY_MAP = [
+    {
+        "keywords": ["serial", "serial number", "wjs serial", "photo of serial"],
+        "title": "WJS serial number example",
+        "images": ["documents/inventory/images/wjs_serial_number_example.jpg"],
+    },
+    {
+        "keywords": ["box label", "label", "wjs box", "model label"],
+        "title": "WJS box label example",
+        "images": ["documents/inventory/images/wjs_box_label_example.jpg"],
+    },
+]
+
+
 # ================= LOAD DOCUMENTS & VECTOR DB =================
 @st.cache_resource
 def load_vector_db():
@@ -38,7 +55,6 @@ def load_vector_db():
 
     docs = []
 
-    # Recursive scan
     for root, _, files in os.walk(DOC_DIR):
         for file in files:
             path = os.path.join(root, file)
@@ -79,14 +95,12 @@ def load_vector_db():
     )
     chunks = splitter.split_documents(docs)
 
-    embeddings = OpenAIEmbeddings(
-        model="text-embedding-3-small"
-    )
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
     return FAISS.from_documents(chunks, embeddings)
 
 
-# ================= INITIALIZE DB SAFELY =================
+# ================= INIT DB =================
 db = None
 try:
     db = load_vector_db()
@@ -98,6 +112,23 @@ except Exception:
 question = st.text_input("Ask your question:")
 
 if question:
+    q = question.lower()
+
+    # ================= DIRECT IMAGE REQUEST =================
+    for item in IMAGE_QUERY_MAP:
+        if any(k in q for k in item["keywords"]):
+            st.markdown("### 🖼️ Photo")
+            st.write(item["title"])
+
+            for img in item["images"]:
+                if os.path.exists(img):
+                    st.image(img, width=IMAGE_WIDTH)
+                else:
+                    st.error(f"Image not found: {img}")
+
+            st.stop()
+
+    # ================= NORMAL RAG FLOW =================
     if db is None:
         st.warning("Documents are not loaded yet.")
         st.stop()
@@ -114,6 +145,8 @@ if question:
                     "You are a work procedures assistant. "
                     "Answer ONLY using the provided documentation. "
                     "Always answer step-by-step when applicable. "
+                    "Do not output Markdown image links like ![...](...). "
+                    "If the user asks for a photo, say: 'See the image below.' "
                     "If the answer is not in the documents, say exactly: "
                     "'This situation is not documented yet.'"
                 )
@@ -131,7 +164,7 @@ if question:
     lines = answer_text.split("\n")
 
     current_step = None
-    rendered_images = set()  # prevents duplication
+    rendered_images = set()
 
     for line in lines:
         st.write(line)
@@ -146,7 +179,6 @@ if question:
         if current_step is None:
             continue
 
-        # Render images ONCE per step
         for doc in results:
             src = doc.metadata.get("source")
 
@@ -154,10 +186,10 @@ if question:
                 for img in STEP_IMAGE_MAP[src][current_step]:
                     key = f"{src}:{current_step}:{img}"
                     if key not in rendered_images and os.path.exists(img):
-                        st.image(img, width=450)
+                        st.image(img, width=IMAGE_WIDTH)
                         rendered_images.add(key)
 
-    # Optional: show sources
+    # ================= SOURCES =================
     with st.expander("📄 Sources used"):
         sources = sorted({doc.metadata.get("source", "Unknown") for doc in results})
         for src in sources:
