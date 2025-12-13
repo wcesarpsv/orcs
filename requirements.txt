@@ -4,5 +4,6 @@ streamlit_qrcode_scanner
 openai
 langchain
 langchain-community
+langchain-text-splitters
 faiss-cpu
 pymupdf
