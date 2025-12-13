@@ -5,9 +5,10 @@ import fitz
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.docstore.document import Document
+from langchain_core.documents import Document
 
 from openai import OpenAI
+
 
 
 # ================= CONFIG =================
