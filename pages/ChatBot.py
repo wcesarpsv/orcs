@@ -24,66 +24,55 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 # ================= LOAD DOCUMENTS & VECTOR DB =================
 @st.cache_resource
 def load_vector_db():
-    # --- Safety checks ---
     if not os.path.exists(DOC_DIR):
         st.error(f"Documents folder not found: '{DOC_DIR}'")
         st.stop()
 
-    files = os.listdir(DOC_DIR)
-    if not files:
-        st.warning("No documents found. Please add procedure files to the documents folder.")
-        st.stop()
-
     docs = []
 
-    for file in files:
-        path = os.path.join(DOC_DIR, file)
+    for root, _, files in os.walk(DOC_DIR):
+        for file in files:
+            path = os.path.join(root, file)
 
-        # --- PDF ---
-        if file.lower().endswith(".pdf"):
-            with fitz.open(path) as pdf:
-                text = "\n".join(page.get_text() for page in pdf)
-                if text.strip():
-                    docs.append(
-                        Document(
-                            page_content=text,
-                            metadata={"source": file}
+            # --- PDF ---
+            if file.lower().endswith(".pdf"):
+                with fitz.open(path) as pdf:
+                    text = "\n".join(page.get_text() for page in pdf)
+                    if text.strip():
+                        docs.append(
+                            Document(
+                                page_content=text,
+                                metadata={"source": os.path.relpath(path, DOC_DIR)}
+                            )
                         )
-                    )
 
-        # --- Markdown / TXT ---
-        elif file.lower().endswith((".md", ".txt")):
-            with open(path, "r", encoding="utf-8") as f:
-                text = f.read()
-                if text.strip():
-                    docs.append(
-                        Document(
-                            page_content=text,
-                            metadata={"source": file}
+            # --- Markdown / TXT ---
+            elif file.lower().endswith((".md", ".txt")):
+                with open(path, "r", encoding="utf-8") as f:
+                    text = f.read()
+                    if text.strip():
+                        docs.append(
+                            Document(
+                                page_content=text,
+                                metadata={"source": os.path.relpath(path, DOC_DIR)}
+                            )
                         )
-                    )
 
     if not docs:
         st.error("Documents were found, but no readable content was loaded.")
         st.stop()
 
-    # --- Split into chunks ---
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
         chunk_overlap=80
     )
     chunks = splitter.split_documents(docs)
 
-    # --- Embeddings (NEW official OpenAI integration) ---
     embeddings = OpenAIEmbeddings(
         model="text-embedding-3-small"
     )
 
-    # --- Vector DB ---
     return FAISS.from_documents(chunks, embeddings)
-
-
-db = load_vector_db()
 
 
 # ================= CHAT =================
