@@ -175,18 +175,18 @@ if question:
 
 
     # ================= SHOW RELATED IMAGES =================
-    shown_images = set()
+    # shown_images = set()
     
-    for doc in results:
-        src = doc.metadata.get("source")
-        if src in IMAGE_MAP:
-            for img in IMAGE_MAP[src]:
-                if img not in shown_images and os.path.exists(img):
-                    st.image(img, use_column_width=True)
-                    shown_images.add(img)
+    # for doc in results:
+    #     src = doc.metadata.get("source")
+    #     if src in IMAGE_MAP:
+    #         for img in IMAGE_MAP[src]:
+    #             if img not in shown_images and os.path.exists(img):
+    #                 st.image(img, use_column_width=True)
+    #                 shown_images.add(img)
 
 
-    with st.expander("📄 Sources used"):
-        sources = sorted({doc.metadata.get("source", "Unknown") for doc in results})
-        for src in sources:
-            st.write(src)
+    # with st.expander("📄 Sources used"):
+    #     sources = sorted({doc.metadata.get("source", "Unknown") for doc in results})
+    #     for src in sources:
+    #         st.write(src)
