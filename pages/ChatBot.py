@@ -16,7 +16,7 @@ st.set_page_config(page_title="Procedures Assistant", layout="wide")
 st.title("🛠️ Work Procedures Assistant")
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-DOC_DIR = "documents"
+DOC_DIR = "Document"
 
 # ================= LOAD DOCS =================
 @st.cache_resource
