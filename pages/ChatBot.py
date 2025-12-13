@@ -21,12 +21,12 @@ DOC_DIR = "documents"
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 
-IMAGE_MAP = {
-    "inventory/wjs_inventory_sign_out.md": [
-        "documents/inventory/images/wjs_box_label_example.jpg",
-        "documents/inventory/images/wjs_serial_number_example.jpg",
-    ]
-}
+# IMAGE_MAP = {
+#     "inventory/wjs_inventory_sign_out.md": [
+#         "documents/inventory/images/wjs_box_label_example.jpg",
+#         "documents/inventory/images/wjs_serial_number_example.jpg",
+#     ]
+# }
 
 
 STEP_IMAGE_MAP = {
