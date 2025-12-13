@@ -154,7 +154,7 @@ if question:
                 for img in STEP_IMAGE_MAP[src][current_step]:
                     key = f"{src}:{current_step}:{img}"
                     if key not in rendered_images and os.path.exists(img):
-                        st.image(img, use_column_width=True)
+                        st.image(img, width=450)
                         rendered_images.add(key)
 
     # Optional: show sources
