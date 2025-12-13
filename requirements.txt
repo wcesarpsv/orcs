@@ -2,4 +2,9 @@ streamlit
 tinydb
 qrcode_scanner
 streamlit_qrcode_scanner
-fitz
+openai
+langchain
+langchain-community
+faiss-cpu
+pymupdf
+
