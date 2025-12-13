@@ -7,3 +7,4 @@ langchain-community
 langchain-text-splitters
 faiss-cpu
 pymupdf
+langchain-openai
