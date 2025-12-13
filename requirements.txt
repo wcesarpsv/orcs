@@ -2,3 +2,4 @@ streamlit
 tinydb
 qrcode_scanner
 streamlit_qrcode_scanner
+fitz
