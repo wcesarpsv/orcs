@@ -1,10 +1,8 @@
 streamlit
 tinydb
-qrcode_scanner
 streamlit_qrcode_scanner
 openai
 langchain
 langchain-community
 faiss-cpu
 pymupdf
-
