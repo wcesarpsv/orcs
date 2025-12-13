@@ -62,13 +62,13 @@ If a *Large Carmanah WJS* installation is scheduled, the technician must sign ou
 
 1. After verification, the warehouse will issue the WJS units and components.
 2. All issued items will be recorded under the technician’s inventory.
-3. During each service call, the technician must capture a **clear photograph of the WJS serial number** directly from the sign.
+3. During each service call, the technician must capture a **clear photograph of the WJS serial number sign** directly from the sign.
 
 ---
 
 ### Example: WJS serial number photo
 
-The image below shows how the WJS serial number should be photographed for inventory control.
+The image below shows how the WJS serial number sign should be photographed for inventory control.
 
 ![WJS serial number example](images/wjs_serial_number_example.jpg)
 
