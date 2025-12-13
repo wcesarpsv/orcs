@@ -118,5 +118,7 @@ if question:
     st.write(response.choices[0].message.content)
 
     with st.expander("📄 Sources used"):
-        for doc in results:
-            st.write(doc.metadata.get("source", "Unknown"))
+        sources = sorted({doc.metadata.get("source", "Unknown") for doc in results})
+        for src in sources:
+            st.write(src)
+
