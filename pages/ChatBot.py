@@ -29,6 +29,14 @@ IMAGE_MAP = {
 }
 
 
+STEP_IMAGE_MAP = {
+    "inventory/wjs_inventory_sign_out.md": {
+        3: ["documents/inventory/images/wjs_box_label_example.jpg"],
+        4: ["documents/inventory/images/wjs_serial_number_example.jpg"],
+    }
+}
+
+
 # ================= LOAD DOCUMENTS & VECTOR DB =================
 @st.cache_resource
 def load_vector_db():
@@ -138,7 +146,33 @@ if question:
     )
 
     st.markdown("### ✅ Answer")
-    st.write(response.choices[0].message.content)
+    
+    answer_text = response.choices[0].message.content
+    lines = answer_text.split("\n")
+    
+    current_step = None
+    
+    for line in lines:
+        st.write(line)
+    
+        # Detect step number (e.g., "4. Capture WJS serial number")
+        if line.strip() and line.lstrip()[0].isdigit():
+            try:
+                current_step = int(line.split(".")[0])
+            except:
+                current_step = None
+    
+        # Show images right after the step that needs them
+        for doc in results:
+            src = doc.metadata.get("source")
+            if (
+                src in STEP_IMAGE_MAP
+                and current_step in STEP_IMAGE_MAP[src]
+            ):
+                for img in STEP_IMAGE_MAP[src][current_step]:
+                    if os.path.exists(img):
+                        st.image(img, use_column_width=True)
+
 
     # ================= SHOW RELATED IMAGES =================
     shown_images = set()
