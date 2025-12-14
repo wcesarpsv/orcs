@@ -24,6 +24,11 @@
             "keywords": ["box label", "label", "wjs box", "model label"],
             "title": "WJS box label example",
             "images": ["documents/inventory/images/wjs_box_label_example.jpg"]
+        },
+        {
+            "keywords": ["reset", "cisco", "button"],
+            "title": "WJS box label example",
+            "images": ["documents/troubleshooting/images/cisco_router_reset_button.jpg"]
         }
     ]
 }
