@@ -45,6 +45,24 @@ IMAGE_QUERY_MAP = [
     },
 ]
 
+STEP_IMAGE_MAP.update({
+    "troubleshooting/wjs_troubleshooting_guide.md": {
+        # Admart
+        1: ["documents/troubleshooting/images/admart_no_power.jpg"],
+        2: ["documents/troubleshooting/images/admart_flashing_decimals.jpg"],
+
+        # Carmanah
+        3: ["documents/troubleshooting/images/carmanah_no_power.jpg"],
+        4: ["documents/troubleshooting/images/carmanah_flashing_decimals.jpg"],
+        5: ["documents/troubleshooting/images/carmanah_moving_decimals.jpg"],
+
+        # Transceiver / Router
+        6: ["documents/troubleshooting/images/transceiver_green_led.jpg"],
+        7: ["documents/troubleshooting/images/cisco_router_reset_button.jpg"],
+    }
+})
+
+
 
 # ================= LOAD DOCUMENTS & VECTOR DB =================
 @st.cache_resource
