@@ -127,10 +127,16 @@ except Exception:
 
 
 # ================= CHAT =================
-question = st.text_input("Ask your question:")
+question = st.text_input(
+    "Ask your question:",
+    placeholder="Type your question here and press Enter or click Ask"
+)
 
-if question:
+ask_button = st.button("Ask")
+
+if ask_button and question:
     q = question.lower()
+
 
     # ================= DIRECT IMAGE REQUEST =================
     for item in IMAGE_QUERY_MAP:
