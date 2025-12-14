@@ -63,6 +63,28 @@
       "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
       "tags": ["cisco", "router", "reset", "button"],
       "description": "Cisco router reset button location"
+    },
+    {
+      "image_id": "smallcarmanah",
+      "path": "documents/images/smallcarmanah.jpg",
+      "procedure": "installation/carmanah_installation.md",
+      "tags": ["carmanah", "small", "sign"],
+      "description": "Small Carmanah sign"
+    },
+     {
+      "image_id": "largecarmanah",
+      "path": "documents/images/largecarmanah.jpg",
+      "procedure": "installation/carmanah_installation.md",
+      "tags": ["carmanah", "large", "sign"],
+      "description": "Large Carmanah Sign"
+    },
+    {
+      "image_id": "smalladmart",
+      "path": "documents/images/smalladmart.jpg",
+      "procedure": "installation/admart_installation.md",
+      "tags": ["admart", "small", "sign"],
+      "description": "Small Admart Sign"
     }
+    
   ]
 }
