@@ -1,34 +1,68 @@
 {
-    "step_image_map": {
-        "inventory/wjs_inventory_sign_out.md": {
-            "3": ["documents/inventory/images/wjs_box_label_example.jpg"],
-            "4": ["documents/inventory/images/wjs_serial_number_example.jpg"]
-        },
-        "troubleshooting/wjs_troubleshooting_guide.md": {
-            "1": ["documents/troubleshooting/images/admart_no_power.jpg"],
-            "2": ["documents/troubleshooting/images/admart_flashing_decimals.jpg"],
-            "3": ["documents/troubleshooting/images/carmanah_no_power.jpg"],
-            "4": ["documents/troubleshooting/images/carmanah_flashing_decimals.jpg"],
-            "5": ["documents/troubleshooting/images/carmanah_moving_decimals.jpg"],
-            "6": ["documents/troubleshooting/images/transceiver_green_led.jpg"],
-            "7": ["documents/troubleshooting/images/cisco_router_reset_button.jpg"]
-        }
+  "images": [
+    {
+      "image_id": "wjs_box_label",
+      "path": "documents/inventory/images/wjs_box_label_example.jpg",
+      "procedure": "inventory/wjs_inventory_sign_out.md",
+      "tags": ["box", "label", "model", "wjs"],
+      "description": "WJS box label showing model information"
     },
-    "image_query_map": [
-        {
-            "keywords": ["serial", "serial number", "wjs serial", "photo of serial"],
-            "title": "WJS serial number example",
-            "images": ["documents/inventory/images/wjs_serial_number_example.jpg"]
-        },
-        {
-            "keywords": ["box label", "label", "wjs box", "model label"],
-            "title": "WJS box label example",
-            "images": ["documents/inventory/images/wjs_box_label_example.jpg"]
-        },
-        {
-            "keywords": ["reset", "cisco", "button"],
-            "title": "WJS box label example",
-            "images": ["documents/troubleshooting/images/cisco_router_reset_button.jpg"]
-        }
-    ]
+    {
+      "image_id": "wjs_serial_number",
+      "path": "documents/inventory/images/wjs_serial_number_example.jpg",
+      "procedure": "inventory/wjs_inventory_sign_out.md",
+      "tags": ["serial", "serial number", "wjs"],
+      "description": "WJS serial number location"
+    },
+
+    {
+      "image_id": "admart_no_power",
+      "path": "documents/troubleshooting/images/admart_no_power.jpg",
+      "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
+      "tags": ["admart", "no power", "power", "off"],
+      "description": "Admart sign with no power"
+    },
+    {
+      "image_id": "admart_flashing_decimals",
+      "path": "documents/troubleshooting/images/admart_flashing_decimals.jpg",
+      "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
+      "tags": ["admart", "flashing", "decimals", "led"],
+      "description": "Admart flashing decimals fault state"
+    },
+    {
+      "image_id": "carmanah_no_power",
+      "path": "documents/troubleshooting/images/carmanah_no_power.jpg",
+      "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
+      "tags": ["carmanah", "no power", "power", "off"],
+      "description": "Carmanah sign with no power"
+    },
+    {
+      "image_id": "carmanah_flashing_decimals",
+      "path": "documents/troubleshooting/images/carmanah_flashing_decimals.jpg",
+      "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
+      "tags": ["carmanah", "flashing", "decimals", "led"],
+      "description": "Carmanah flashing decimals fault state"
+    },
+    {
+      "image_id": "carmanah_moving_decimals",
+      "path": "documents/troubleshooting/images/carmanah_moving_decimals.jpg",
+      "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
+      "tags": ["carmanah", "moving", "decimals", "led"],
+      "description": "Carmanah moving decimals state"
+    },
+    {
+      "image_id": "transceiver_green_led",
+      "path": "documents/troubleshooting/images/transceiver_green_led.jpg",
+      "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
+      "tags": ["transceiver", "green", "led", "status"],
+      "description": "Transceiver with green LED indicating normal status"
+    },
+    {
+      "image_id": "cisco_router_reset",
+      "path": "documents/troubleshooting/images/cisco_router_reset_button.jpg",
+      "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
+      "tags": ["cisco", "router", "reset", "button"],
+      "description": "Cisco router reset button location"
+    }
+  ]
 }
