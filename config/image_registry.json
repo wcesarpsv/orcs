@@ -84,6 +84,13 @@
       "procedure": "installation/admart_installation.md",
       "tags": ["admart", "small", "sign"],
       "description": "Small Admart Sign"
+    },
+    {
+      "image_id": "largeadmart",
+      "path": "documents/images/largeadmart.jpg",
+      "procedure": "installation/admart_installation.md",
+      "tags": ["admart", "large", "sign"],
+      "description": "Large Admart Sign"
     }
     
   ]
