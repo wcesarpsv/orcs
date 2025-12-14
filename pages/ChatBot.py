@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import json
 import fitz  # PyMuPDF
 
 # LangChain
@@ -14,62 +15,38 @@ from openai import OpenAI
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Procedures Assistant", layout="wide")
-st.title("🛠️ Work Procedures Assistant")
 
 DOC_DIR = "documents"
+IMAGE_REGISTRY_PATH = "config/image_registry.json"
 IMAGE_WIDTH = 450
 
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# Load OpenAI
+try:
+    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+except Exception:
+    st.error("❌ OpenAI API Key missing in Streamlit secrets.")
+    st.stop()
 
 
-# ================= STEP → IMAGE MAP =================
-STEP_IMAGE_MAP = {
-    "inventory/wjs_inventory_sign_out.md": {
-        3: ["documents/inventory/images/wjs_box_label_example.jpg"],
-        4: ["documents/inventory/images/wjs_serial_number_example.jpg"],
-    }
-}
+# ================= LOAD IMAGE REGISTRY =================
+@st.cache_data
+def load_image_registry():
+    try:
+        with open(IMAGE_REGISTRY_PATH, "r", encoding="utf-8") as f:
+            return json.load(f).get("images", [])
+    except Exception as e:
+        st.error(f"Error loading image registry: {e}")
+        return []
 
 
-# ================= IMAGE QUERY MAP (direct photo requests) =================
-IMAGE_QUERY_MAP = [
-    {
-        "keywords": ["serial", "serial number", "wjs serial", "photo of serial"],
-        "title": "WJS serial number example",
-        "images": ["documents/inventory/images/wjs_serial_number_example.jpg"],
-    },
-    {
-        "keywords": ["box label", "label", "wjs box", "model label"],
-        "title": "WJS box label example",
-        "images": ["documents/inventory/images/wjs_box_label_example.jpg"],
-    },
-]
-
-STEP_IMAGE_MAP.update({
-    "troubleshooting/wjs_troubleshooting_guide.md": {
-        # Admart
-        1: ["documents/troubleshooting/images/admart_no_power.jpg"],
-        2: ["documents/troubleshooting/images/admart_flashing_decimals.jpg"],
-
-        # Carmanah
-        3: ["documents/troubleshooting/images/carmanah_no_power.jpg"],
-        4: ["documents/troubleshooting/images/carmanah_flashing_decimals.jpg"],
-        5: ["documents/troubleshooting/images/carmanah_moving_decimals.jpg"],
-
-        # Transceiver / Router
-        6: ["documents/troubleshooting/images/transceiver_green_led.jpg"],
-        7: ["documents/troubleshooting/images/cisco_router_reset_button.jpg"],
-    }
-})
-
+IMAGE_REGISTRY = load_image_registry()
 
 
 # ================= LOAD DOCUMENTS & VECTOR DB =================
 @st.cache_resource
 def load_vector_db():
     if not os.path.exists(DOC_DIR):
-        st.error(f"Documents folder not found: '{DOC_DIR}'")
-        st.stop()
+        return None
 
     docs = []
 
@@ -99,13 +76,15 @@ def load_vector_db():
                 docs.append(
                     Document(
                         page_content=text,
-                        metadata={"source": os.path.relpath(path, DOC_DIR)}
+                        metadata={
+                            "source": os.path.relpath(path, DOC_DIR),
+                            "doc_id": os.path.splitext(file)[0]
+                        }
                     )
                 )
 
     if not docs:
-        st.error("Documents were found, but no readable content was loaded.")
-        st.stop()
+        return None
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
@@ -118,49 +97,95 @@ def load_vector_db():
     return FAISS.from_documents(chunks, embeddings)
 
 
-# ================= INIT DB =================
-db = None
-try:
-    db = load_vector_db()
-except Exception:
+# ================= IMAGE RESOLUTION LOGIC =================
+def resolve_images(prompt: str, procedure: str, registry: list) -> list:
+    """
+    Deterministic image resolver.
+    Images are matched ONLY if:
+    - They belong to the active procedure
+    - One or more tags appear in the user prompt
+    """
+    q = set(prompt.lower().split())
+    images = []
+
+    for img in registry:
+        if img.get("procedure") != procedure:
+            continue
+
+        if q.intersection(set(img.get("tags", []))):
+            images.append(img["path"])
+
+    return images
+
+
+# ================= SIDEBAR =================
+with st.sidebar:
+    st.header("⚙️ Settings")
+
+    if st.button("🔄 Refresh Knowledge Base"):
+        st.cache_resource.clear()
+        st.cache_data.clear()
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown("### 📚 How to use")
+    st.markdown(
+        """
+        1. Ask a question about work procedures  
+        2. Be specific (device, symptom, action)  
+        3. Images will appear only when relevant  
+        """
+    )
+
+    if st.button("🧹 Clear Chat History"):
+        st.session_state.messages = []
+        st.rerun()
+
+
+# ================= INIT APP =================
+st.title("🛠️ Work Procedures Assistant")
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+db = load_vector_db()
+
+if db is None:
+    st.warning(f"⚠️ No documents found in `{DOC_DIR}`.")
     st.stop()
 
 
-# ================= CHAT =================
-question = st.text_input(
-    "Ask your question:",
-    placeholder="Type your question here and press Enter or click Ask"
-)
-
-ask_button = st.button("Ask")
-
-if ask_button and question:
-    q = question.lower()
+# ================= DISPLAY CHAT HISTORY =================
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+        for img in message.get("images", []):
+            if os.path.exists(img):
+                st.image(img, width=IMAGE_WIDTH)
 
 
-    # ================= DIRECT IMAGE REQUEST =================
-    for item in IMAGE_QUERY_MAP:
-        if any(k in q for k in item["keywords"]):
-            st.markdown("### 🖼️ Photo")
-            st.write(item["title"])
+# ================= CHAT INPUT =================
+if prompt := st.chat_input("Ask a question about procedures..."):
+    # User message
+    st.session_state.messages.append(
+        {"role": "user", "content": prompt}
+    )
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-            for img in item["images"]:
-                if os.path.exists(img):
-                    st.image(img, width=IMAGE_WIDTH)
-                else:
-                    st.error(f"Image not found: {img}")
-
-            st.stop()
-
-    # ================= NORMAL RAG FLOW =================
-    if db is None:
-        st.warning("Documents are not loaded yet.")
-        st.stop()
-
-    results = db.similarity_search(question, k=3)
+    # ================= RAG SEARCH =================
+    results = db.similarity_search(prompt, k=3)
     context = "\n\n".join(doc.page_content for doc in results)
 
-    response = client.chat.completions.create(
+    active_procedure = results[0].metadata.get("source")
+
+    history_context = "\n".join(
+        f"{m['role']}: {m['content']}"
+        for m in st.session_state.messages[-5:]
+    )
+
+    # ================= LLM RESPONSE =================
+    llm_response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {
@@ -168,53 +193,45 @@ if ask_button and question:
                 "content": (
                     "You are a work procedures assistant. "
                     "Answer ONLY using the provided documentation. "
-                    "Always answer step-by-step when applicable. "
-                    "Do not output Markdown image links like ![...](...). "
-                    "If the user asks for a photo, say: 'See the image below.' "
+                    "Always respond step-by-step when applicable. "
                     "If the answer is not in the documents, say exactly: "
                     "'This situation is not documented yet.'"
                 )
             },
             {
                 "role": "user",
-                "content": f"Documentation:\n{context}\n\nQuestion: {question}"
+                "content": (
+                    f"History:\n{history_context}\n\n"
+                    f"Documentation:\n{context}\n\n"
+                    f"Question: {prompt}"
+                )
             }
         ]
     )
 
-    st.markdown("### ✅ Answer")
+    response_content = llm_response.choices[0].message.content
 
-    answer_text = response.choices[0].message.content
-    lines = answer_text.split("\n")
+    # ================= IMAGE RESOLUTION =================
+    response_images = resolve_images(
+        prompt=prompt,
+        procedure=active_procedure,
+        registry=IMAGE_REGISTRY
+    )
 
-    current_step = None
-    rendered_images = set()
+    # ================= DISPLAY ASSISTANT =================
+    with st.chat_message("assistant"):
+        st.markdown(response_content)
+        for img in response_images:
+            if os.path.exists(img):
+                st.image(img, width=IMAGE_WIDTH)
+            else:
+                st.warning(f"Image not found: {img}")
 
-    for line in lines:
-        st.write(line)
-
-        # Detect numbered steps (e.g., "4. Capture serial number")
-        if line.strip() and line.lstrip()[0].isdigit():
-            try:
-                current_step = int(line.split(".")[0])
-            except Exception:
-                current_step = None
-
-        if current_step is None:
-            continue
-
-        for doc in results:
-            src = doc.metadata.get("source")
-
-            if src in STEP_IMAGE_MAP and current_step in STEP_IMAGE_MAP[src]:
-                for img in STEP_IMAGE_MAP[src][current_step]:
-                    key = f"{src}:{current_step}:{img}"
-                    if key not in rendered_images and os.path.exists(img):
-                        st.image(img, width=IMAGE_WIDTH)
-                        rendered_images.add(key)
-
-    # ================= SOURCES =================
-    with st.expander("📄 Sources used"):
-        sources = sorted({doc.metadata.get("source", "Unknown") for doc in results})
-        for src in sources:
-            st.write(src)
+    # Save history
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "content": response_content,
+            "images": response_images
+        }
+    )
