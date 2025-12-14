@@ -2,96 +2,96 @@
   "images": [
     {
       "image_id": "wjs_box_label",
-      "path": "documents/inventory/images/wjs_box_label_example.jpg",
+      "path": "documents/images/inventory/wjs_box_label_example.jpg",
       "procedure": "inventory/wjs_inventory_sign_out.md",
       "tags": ["box", "label", "model", "wjs"],
       "description": "WJS box label showing model information"
     },
     {
       "image_id": "wjs_serial_number",
-      "path": "documents/inventory/images/wjs_serial_number_example.jpg",
+      "path": "documents/images/inventory/wjs_serial_number_example.jpg",
       "procedure": "inventory/wjs_inventory_sign_out.md",
-      "tags": ["serial", "serial number", "wjs"],
+      "tags": ["serial", "number", "wjs"],
       "description": "WJS serial number location"
     },
 
     {
       "image_id": "admart_no_power",
-      "path": "documents/troubleshooting/images/admart_no_power.jpg",
+      "path": "documents/images/troubleshooting/admart_no_power.jpg",
       "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
-      "tags": ["admart", "no power", "power", "off"],
+      "tags": ["admart", "no", "power", "off"],
       "description": "Admart sign with no power"
     },
     {
       "image_id": "admart_flashing_decimals",
-      "path": "documents/troubleshooting/images/admart_flashing_decimals.jpg",
+      "path": "documents/images/troubleshooting/admart_flashing_decimals.jpg",
       "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
       "tags": ["admart", "flashing", "decimals", "led"],
       "description": "Admart flashing decimals fault state"
     },
     {
       "image_id": "carmanah_no_power",
-      "path": "documents/troubleshooting/images/carmanah_no_power.jpg",
+      "path": "documents/images/troubleshooting/carmanah_no_power.jpg",
       "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
-      "tags": ["carmanah", "no power", "power", "off"],
+      "tags": ["carmanah", "no", "power", "off"],
       "description": "Carmanah sign with no power"
     },
     {
       "image_id": "carmanah_flashing_decimals",
-      "path": "documents/troubleshooting/images/carmanah_flashing_decimals.jpg",
+      "path": "documents/images/troubleshooting/carmanah_flashing_decimals.jpg",
       "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
       "tags": ["carmanah", "flashing", "decimals", "led"],
       "description": "Carmanah flashing decimals fault state"
     },
     {
       "image_id": "carmanah_moving_decimals",
-      "path": "documents/troubleshooting/images/carmanah_moving_decimals.jpg",
+      "path": "documents/images/troubleshooting/carmanah_moving_decimals.jpg",
       "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
       "tags": ["carmanah", "moving", "decimals", "led"],
       "description": "Carmanah moving decimals state"
     },
     {
       "image_id": "transceiver_green_led",
-      "path": "documents/troubleshooting/images/transceiver_green_led.jpg",
+      "path": "documents/images/troubleshooting/transceiver_green_led.jpg",
       "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
       "tags": ["transceiver", "green", "led", "status"],
       "description": "Transceiver with green LED indicating normal status"
     },
     {
       "image_id": "cisco_router_reset",
-      "path": "documents/troubleshooting/images/cisco_router_reset_button.jpg",
+      "path": "documents/images/troubleshooting/cisco_router_reset_button.jpg",
       "procedure": "troubleshooting/wjs_troubleshooting_guide.md",
       "tags": ["cisco", "router", "reset", "button"],
       "description": "Cisco router reset button location"
     },
+
     {
-      "image_id": "smallcarmanah",
-      "path": "documents/images/smallcarmanah.jpg",
+      "image_id": "carmanah_small_sign",
+      "path": "documents/images/installation/carmanah_small.jpg",
       "procedure": "installation/carmanah_installation.md",
       "tags": ["carmanah", "small", "sign"],
       "description": "Small Carmanah sign"
     },
-     {
-      "image_id": "largecarmanah",
-      "path": "documents/images/largecarmanah.jpg",
+    {
+      "image_id": "carmanah_large_sign",
+      "path": "documents/images/installation/carmanah_large.jpg",
       "procedure": "installation/carmanah_installation.md",
       "tags": ["carmanah", "large", "sign"],
-      "description": "Large Carmanah Sign"
+      "description": "Large Carmanah sign"
     },
     {
-      "image_id": "smalladmart",
-      "path": "documents/images/smalladmart.jpg",
+      "image_id": "admart_small_sign",
+      "path": "documents/images/installation/admart_small.jpg",
       "procedure": "installation/admart_installation.md",
       "tags": ["admart", "small", "sign"],
-      "description": "Small Admart Sign"
+      "description": "Small Admart sign"
     },
     {
-      "image_id": "largeadmart",
-      "path": "documents/images/largeadmart.jpg",
+      "image_id": "admart_large_sign",
+      "path": "documents/images/installation/admart_large.jpg",
       "procedure": "installation/admart_installation.md",
       "tags": ["admart", "large", "sign"],
-      "description": "Large Admart Sign"
+      "description": "Large Admart sign"
     }
-    
   ]
 }
