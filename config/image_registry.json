@@ -1,0 +1,34 @@
+{
+    "step_image_map": {
+        "inventory/wjs_inventory_sign_out.md": {
+            "3": ["documents/inventory/images/wjs_box_label_example.jpg"],
+            "4": ["documents/inventory/images/wjs_serial_number_example.jpg"]
+        },
+        "troubleshooting/wjs_troubleshooting_guide.md": {
+            "1": ["documents/troubleshooting/images/admart_no_power.jpg"],
+            "2": ["documents/troubleshooting/images/admart_flashing_decimals.jpg"],
+            "3": ["documents/troubleshooting/images/carmanah_no_power.jpg"],
+            "4": ["documents/troubleshooting/images/carmanah_flashing_decimals.jpg"],
+            "5": ["documents/troubleshooting/images/carmanah_moving_decimals.jpg"],
+            "6": ["documents/troubleshooting/images/transceiver_green_led.jpg"],
+            "7": ["documents/troubleshooting/images/cisco_router_reset_button.jpg"]
+        }
+    },
+    "image_query_map": [
+        {
+            "keywords": ["serial", "serial number", "wjs serial", "photo of serial"],
+            "title": "WJS serial number example",
+            "images": ["documents/inventory/images/wjs_serial_number_example.jpg"]
+        },
+        {
+            "keywords": ["box label", "label", "wjs box", "model label"],
+            "title": "WJS box label example",
+            "images": ["documents/inventory/images/wjs_box_label_example.jpg"]
+        },
+        {
+            "keywords": ["reset", "cisco", "button"],
+            "title": "WJS box label example",
+            "images": ["documents/troubleshooting/images/cisco_router_reset_button.jpg"]
+        }
+    ]
+}
