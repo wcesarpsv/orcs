@@ -2,209 +2,240 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 from io import BytesIO
+from openai import OpenAI
 
 # =====================
 # CONFIG
 # =====================
-st.set_page_config(page_title="PM SST – Guided Scan", layout="centered")
-st.title("🧾 PM SST – Guided Component Scan")
-st.caption("Follow the exact component order shown inside the machine")
+st.set_page_config(page_title="WJS Service Report Generator", layout="wide")
+st.title("🛠️ WJS Service Report Generator")
+st.caption("Hybrid layout + PM Inventory + AI (optional)")
 st.divider()
 
 # =====================
-# SEQUÊNCIA OFICIAL (IGUAL À FOTO)
+# OPENAI SAFE CLIENT
 # =====================
-PM_SEQUENCE = [
-    "Burster 1",
-    "Burster 2",
-    "Burster 3",
-    "Burster 4",
-    "Burster 5",
-    "Burster 6",
-    "Burster 7",
-    "Scanner",
-    "Printer",
-    "Slip Reader",
-    "LCD",
-    "Keypad",
-    "Enclosure",
-    "Router",
-    "Pin Pad",
-]
+def get_openai_client():
+    try:
+        key = st.secrets.get("OPENAI_API_KEY", None)
+        if not key:
+            return None
+        return OpenAI(api_key=key)
+    except Exception:
+        return None
 
-TOTAL_STEPS = len(PM_SEQUENCE)
+client = get_openai_client()
 
 # =====================
-# SESSION STATE
+# AI – POLISH DETAILS ONLY
 # =====================
-if "pm_step" not in st.session_state:
-    st.session_state.pm_step = 0
+def polish_details_ai(text):
+    if not client or not text.strip():
+        return text.strip()
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Rewrite the technician notes into a concise, professional service report details section. "
+                        "Do not add assumptions or new steps. Keep all facts."
+                    )
+                },
+                {"role": "user", "content": text}
+            ],
+            temperature=0.2
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception:
+        return text.strip()
 
-if "pm_data" not in st.session_state:
-    st.session_state.pm_data = {
-        comp: {"Serial": "", "Barcode": ""}
-        for comp in PM_SEQUENCE
-    }
+# =====================
+# COPY BUTTON
+# =====================
+def copy_to_clipboard_button(text):
+    safe_text = (
+        text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+    )
 
-# =====================
-# CAMERA SCANNER (FUNCIONAL)
-# =====================
-def camera_scanner():
     components.html(
-        """
-        <div style="display:flex;flex-direction:column;align-items:center;">
-            <button id="startBtn"
-                style="
-                    margin-bottom:10px;
-                    padding:10px 16px;
-                    background:#16a34a;
-                    color:white;
-                    border:none;
-                    border-radius:6px;
-                    font-size:15px;
-                    cursor:pointer;
-                ">
-                📷 Start Camera
-            </button>
-
-            <div id="reader" style="width:300px;"></div>
-        </div>
-
-        <script src="https://unpkg.com/html5-qrcode"></script>
+        f"""
+        <textarea id="clipboard-text" style="position:absolute; left:-9999px;">{safe_text}</textarea>
+        <button onclick="copyText()"
+            style="background:#2563eb;color:white;border:none;
+                   padding:10px 16px;border-radius:6px;cursor:pointer;">
+            📋 Copy to clipboard
+        </button>
         <script>
-        const readerId = "reader";
-        const html5QrCode = new Html5Qrcode(readerId);
-
-        document.getElementById("startBtn").addEventListener("click", async () => {
-            try {
-                await html5QrCode.start(
-                    { facingMode: "environment" },
-                    { fps: 10, qrbox: 250 },
-                    (decodedText) => {
-                        const input = window.parent.document.querySelector(
-                            'input[data-testid="stTextInput"][aria-label="Barcode"]'
-                        );
-                        if (input) {
-                            input.value = decodedText;
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                        }
-                        html5QrCode.stop();
-                        alert("Barcode scanned successfully!");
-                    }
-                );
-            } catch (err) {
-                alert("Camera error: " + err);
-            }
-        });
+        function copyText() {{
+            navigator.clipboard.writeText(
+                document.getElementById("clipboard-text").value
+            ).then(() => alert("Copied to clipboard!"));
+        }}
         </script>
         """,
-        height=380,
-        scrolling=False,
+        height=60
     )
 
 # =====================
-# UI – PASSO ATUAL
+# PM DEFAULT COMPONENTS
 # =====================
-step = st.session_state.pm_step
+PM_COMPONENTS = [
+    "Burster 1", "Burster 2", "Burster 3", "Burster 4",
+    "Burster 5", "Burster 6", "Burster 7",
+    "Scanner", "Printer", "Slip Reader",
+    "LCD", "Keypad", "Enclosure", "Router", "Pin Pad"
+]
 
-if step < TOTAL_STEPS:
-    component = PM_SEQUENCE[step]
+# =====================
+# FORM
+# =====================
+with st.form("main_form"):
+    report_type = st.selectbox("📄 Report Type", ["PM", "INSTALLATION", "DEINSTALLATION"])
+    use_ai = st.checkbox("🤖 Use AI to polish DETAILS section", value=True)
 
-    st.subheader(f"Step {step + 1} / {TOTAL_STEPS}")
-    st.markdown(f"### 🔹 {component}")
+    colA, colB = st.columns(2)
+    with colA:
+        local = st.text_input("📍 Place Name")
+    with colB:
+        reference = st.text_input("🔢 Reference (RDL / RL)")
 
-    serial = st.text_input(
-        "Serial Number",
-        value=st.session_state.pm_data[component]["Serial"],
-        key=f"sn_{component}"
+    descricao = st.text_area(
+        "📝 Details (facts only)",
+        placeholder="Issues, actions taken, delays, confirmations..."
     )
 
-    barcode = st.text_input(
-        "Barcode",
-        value=st.session_state.pm_data[component]["Barcode"],
-        key=f"bc_{component}"
-    )
+    # =====================
+    # PM INVENTORY SECTION
+    # =====================
+    pm_df = None
 
-    with st.expander("📷 Scan barcode with camera"):
-        camera_scanner()
+    if report_type == "PM":
+        st.subheader("🧾 PM – SST Component Inventory")
+
+        component_rows = []
+        for comp in PM_COMPONENTS:
+            with st.expander(comp):
+                sn = st.text_input(f"{comp} – Serial Number", key=f"{comp}_sn")
+                bc = st.text_input(f"{comp} – Barcode", key=f"{comp}_bc")
+                component_rows.append({
+                    "Component": comp,
+                    "Serial Number": sn,
+                    "Barcode": bc
+                })
+
+        pm_df = pd.DataFrame(component_rows)
+
+        st.subheader("📊 Collected Components")
+        st.dataframe(pm_df, use_container_width=True)
+
+    submitted = st.form_submit_button("✅ Generate Report")
+
+# =====================
+# GENERATION
+# =====================
+if submitted:
+
+    details_final = polish_details_ai(descricao) if use_ai else descricao
+
+    # ---------- PM EXTRAS ----------
+    excel_bytes = None
+    labels_text = ""
+    component_summary = ""
+
+    if report_type == "PM" and pm_df is not None:
+        # Excel
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            pm_df.to_excel(writer, index=False, sheet_name="SST Components")
+        excel_bytes = output.getvalue()
+
+        # Labels
+        labels = []
+        for _, r in pm_df.iterrows():
+            if r["Serial Number"] or r["Barcode"]:
+                labels.append(
+                    f"COMPONENT: {r['Component']}\n"
+                    f"SN: {r['Serial Number']}\n"
+                    f"BARCODE: {r['Barcode']}"
+                )
+        labels_text = "\n\n---\n\n".join(labels)
+
+        # Summary (inside machine)
+        lines = ["COMPONENT LIST"]
+        for _, r in pm_df.iterrows():
+            if r["Serial Number"]:
+                lines.append(f"{r['Component']} – {r['Serial Number']}")
+        component_summary = "\n".join(lines)
+
+    # ---------- FINAL TEXT ----------
+    if report_type == "PM":
+        texto_final = f"""
+PM completed at {local} ({reference})
+
+Burster bins, rollers, and all related peripherals were cleaned.
+Serial numbers and barcodes for all SST components were collected and recorded.
+All hardware components were tested and verified as operational.
+Keys were returned to the retailer upon completion.
+
+All components were labeled inside the machine for future inspections.
+""".strip()
+
+    elif report_type == "INSTALLATION":
+        texto_final = f"""
+WJS Large Carmanah - {reference} Installation Summary
+
+Upon arrival at the site, the retailer indicated the preferred installation location and height.
+
+{details_final}
+
+After completion, the equipment was tested and verified as operational.
+""".strip()
+
+    else:
+        texto_final = f"""
+WJS Sign Deinstallation Summary – {reference}
+
+Upon arrival at the site, the retailer indicated the sign to be removed.
+
+{details_final}
+
+The equipment is being returned to the warehouse.
+""".strip()
+
+    # =====================
+    # OUTPUT
+    # =====================
+    st.divider()
+    st.subheader("📄 Final Report")
+    st.code(texto_final)
 
     col1, col2 = st.columns(2)
-
     with col1:
-        if st.checkbox("Use Barcode as Serial Number", key=f"use_bc_{component}"):
-            serial = barcode
-
+        copy_to_clipboard_button(texto_final)
     with col2:
-        if st.button("✅ Save & Next"):
-            if not barcode.strip():
-                st.warning("Please scan the barcode before continuing.")
-            else:
-                st.session_state.pm_data[component]["Serial"] = serial
-                st.session_state.pm_data[component]["Barcode"] = barcode
-                st.session_state.pm_step += 1
-                st.rerun()
-
-else:
-    # =====================
-    # FINALIZAÇÃO
-    # =====================
-    st.success("✅ PM Component Scan Completed")
-
-    df = pd.DataFrame([
-        {
-            "Component": comp,
-            "Serial Number": data["Serial"],
-            "Barcode": data["Barcode"]
-        }
-        for comp, data in st.session_state.pm_data.items()
-    ])
-
-    st.subheader("📊 Collected Components")
-    st.dataframe(df, use_container_width=True)
-
-    # =====================
-    # EXCEL
-    # =====================
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="SST Components")
-
-    st.download_button(
-        "⬇️ Download Excel (.xlsx)",
-        output.getvalue(),
-        file_name="PM_SST_Components.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-    # =====================
-    # LABELS
-    # =====================
-    st.subheader("🏷️ Labels (Print & Attach)")
-    labels = []
-    for _, r in df.iterrows():
-        labels.append(
-            f"COMPONENT: {r['Component']}\n"
-            f"SN: {r['Serial Number']}\n"
-            f"BARCODE: {r['Barcode']}"
+        st.download_button(
+            "⬇️ Download Report (.txt)",
+            texto_final,
+            file_name=f"{report_type.lower()}_report.txt"
         )
-    st.code("\n\n---\n\n".join(labels))
 
-    # =====================
-    # COMPONENT LIST (IGUAL À FOTO)
-    # =====================
-    st.subheader("📌 Component List (Inside SST)")
-    summary = ["COMPONENT LIST"]
-    for _, r in df.iterrows():
-        summary.append(f"{r['Component']} – {r['Serial Number']}")
-    st.code("\n".join(summary))
+    # ---------- PM OUTPUTS ----------
+    if report_type == "PM":
+        st.divider()
+        st.subheader("📎 PM Attachments")
 
-    # =====================
-    # RESET
-    # =====================
-    if st.button("🔁 Start New PM"):
-        st.session_state.pm_step = 0
-        st.session_state.pm_data = {
-            comp: {"Serial": "", "Barcode": ""}
-            for comp in PM_SEQUENCE
-        }
-        st.rerun()
+        st.download_button(
+            "⬇️ Download SST Components Excel",
+            excel_bytes,
+            file_name="PM_SST_Components.xlsx"
+        )
+
+        st.subheader("🏷️ Labels (Print & Attach)")
+        st.code(labels_text)
+
+        st.subheader("📌 Component List (Inside Machine)")
+        st.code(component_summary)
