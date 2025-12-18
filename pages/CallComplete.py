@@ -1,19 +1,17 @@
 import streamlit as st
 import streamlit.components.v1 as components
-import pandas as pd
-from io import BytesIO
 from openai import OpenAI
 
 # =====================
 # CONFIG
 # =====================
-st.set_page_config(page_title="WJS Service Report Generator", layout="wide")
+st.set_page_config(page_title="WJS Report Generator", layout="centered")
 st.title("🛠️ WJS Service Report Generator")
-st.caption("Hybrid layout + PM Inventory + AI (optional)")
+st.caption("Hybrid mode: fixed layout + optional AI polishing for details")
 st.divider()
 
 # =====================
-# OPENAI SAFE CLIENT
+# SAFE OPENAI CLIENT
 # =====================
 def get_openai_client():
     try:
@@ -27,11 +25,20 @@ def get_openai_client():
 client = get_openai_client()
 
 # =====================
-# AI – POLISH DETAILS ONLY
+# AI: POLISH ONLY DETAILS
 # =====================
-def polish_details_ai(text):
-    if not client or not text.strip():
-        return text.strip()
+def polish_details_ai(raw_details: str) -> str:
+    """
+    Rewrites the technician's detail text in a professional tone.
+    Does NOT add assumptions or new steps.
+    """
+    if not client:
+        return raw_details.strip()
+
+    raw_details = (raw_details or "").strip()
+    if not raw_details:
+        return ""
+
     try:
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -40,202 +47,210 @@ def polish_details_ai(text):
                     "role": "system",
                     "content": (
                         "Rewrite the technician notes into a concise, professional service report details section. "
-                        "Do not add assumptions or new steps. Keep all facts."
-                    )
+                        "Do not add assumptions, do not invent steps, do not add new facts. "
+                        "Keep all facts present in the notes. Use clear sentences."
+                    ),
                 },
-                {"role": "user", "content": text}
+                {"role": "user", "content": raw_details},
             ],
-            temperature=0.2
+            temperature=0.2,
         )
         return resp.choices[0].message.content.strip()
     except Exception:
-        return text.strip()
+        # fallback if API fails
+        return raw_details.strip()
 
 # =====================
 # COPY BUTTON
 # =====================
-def copy_to_clipboard_button(text):
+def copy_to_clipboard_button(text: str):
+    # Escape basic HTML entities to avoid breaking the textarea
     safe_text = (
-        text.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
+        (text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
     )
 
     components.html(
         f"""
-        <textarea id="clipboard-text" style="position:absolute; left:-9999px;">{safe_text}</textarea>
+        <textarea id="clipboard-text" style="position:absolute; left:-9999px; top:-9999px;">{safe_text}</textarea>
+
         <button onclick="copyText()"
-            style="background:#2563eb;color:white;border:none;
-                   padding:10px 16px;border-radius:6px;cursor:pointer;">
+            style="
+                background-color:#2563eb;
+                color:white;
+                border:none;
+                padding:10px 16px;
+                border-radius:6px;
+                font-size:14px;
+                cursor:pointer;
+            ">
             📋 Copy to clipboard
         </button>
+
         <script>
         function copyText() {{
-            navigator.clipboard.writeText(
-                document.getElementById("clipboard-text").value
-            ).then(() => alert("Copied to clipboard!"));
+            const el = document.getElementById("clipboard-text");
+            const text = el.value;
+            navigator.clipboard.writeText(text).then(() => {{
+                alert("Report copied to clipboard!");
+            }}).catch(() => {{
+                alert("Could not copy automatically. Please select and copy manually.");
+            }});
         }}
         </script>
         """,
-        height=60
+        height=60,
     )
 
 # =====================
-# PM DEFAULT COMPONENTS
+# OFFLINE TEMPLATES (FIXED LAYOUT)
 # =====================
-PM_COMPONENTS = [
-    "Burster 1", "Burster 2", "Burster 3", "Burster 4",
-    "Burster 5", "Burster 6", "Burster 7",
-    "Scanner", "Printer", "Slip Reader",
-    "LCD", "Keypad", "Enclosure", "Router", "Pin Pad"
-]
+def format_extras(itens_extras: list[str]) -> str:
+    if not itens_extras:
+        return ""
+    lines = "\n".join([f"- {i}" for i in itens_extras])
+    return f"Additional materials used:\n{lines}"
 
-# =====================
-# FORM
-# =====================
-with st.form("main_form"):
-    report_type = st.selectbox("📄 Report Type", ["PM", "INSTALLATION", "DEINSTALLATION"])
-    use_ai = st.checkbox("🤖 Use AI to polish DETAILS section", value=True)
-
-    colA, colB = st.columns(2)
-    with colA:
-        local = st.text_input("📍 Place Name")
-    with colB:
-        reference = st.text_input("🔢 Reference (RDL / RL)")
-
-    descricao = st.text_area(
-        "📝 Details (facts only)",
-        placeholder="Issues, actions taken, delays, confirmations..."
-    )
-
-    # =====================
-    # PM INVENTORY SECTION
-    # =====================
-    pm_df = None
-
-    if report_type == "PM":
-        st.subheader("🧾 PM – SST Component Inventory")
-
-        component_rows = []
-        for comp in PM_COMPONENTS:
-            with st.expander(comp):
-                sn = st.text_input(f"{comp} – Serial Number", key=f"{comp}_sn")
-                bc = st.text_input(f"{comp} – Barcode", key=f"{comp}_bc")
-                component_rows.append({
-                    "Component": comp,
-                    "Serial Number": sn,
-                    "Barcode": bc
-                })
-
-        pm_df = pd.DataFrame(component_rows)
-
-        st.subheader("📊 Collected Components")
-        st.dataframe(pm_df, use_container_width=True)
-
-    submitted = st.form_submit_button("✅ Generate Report")
-
-# =====================
-# GENERATION
-# =====================
-if submitted:
-
-    details_final = polish_details_ai(descricao) if use_ai else descricao
-
-    # ---------- PM EXTRAS ----------
-    excel_bytes = None
-    labels_text = ""
-    component_summary = ""
-
-    if report_type == "PM" and pm_df is not None:
-        # Excel
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            pm_df.to_excel(writer, index=False, sheet_name="SST Components")
-        excel_bytes = output.getvalue()
-
-        # Labels
-        labels = []
-        for _, r in pm_df.iterrows():
-            if r["Serial Number"] or r["Barcode"]:
-                labels.append(
-                    f"COMPONENT: {r['Component']}\n"
-                    f"SN: {r['Serial Number']}\n"
-                    f"BARCODE: {r['Barcode']}"
-                )
-        labels_text = "\n\n---\n\n".join(labels)
-
-        # Summary (inside machine)
-        lines = ["COMPONENT LIST"]
-        for _, r in pm_df.iterrows():
-            if r["Serial Number"]:
-                lines.append(f"{r['Component']} – {r['Serial Number']}")
-        component_summary = "\n".join(lines)
-
-    # ---------- FINAL TEXT ----------
-    if report_type == "PM":
-        texto_final = f"""
+def template_pm(local: str, reference: str, extras_block: str) -> str:
+    base = f"""
 PM completed at {local} ({reference})
 
 Burster bins, rollers, and all related peripherals were cleaned.
-Serial numbers and barcodes for all SST components were collected and recorded.
-All hardware components were tested and verified as operational.
+Serial numbers for all components were recorded for database entry.
+All hardware components, including the pin pad, were tested and verified as operational.
 Keys were returned to the retailer upon completion.
-
-All components were labeled inside the machine for future inspections.
 """.strip()
 
-    elif report_type == "INSTALLATION":
-        texto_final = f"""
+    if extras_block:
+        base += "\n\n" + extras_block
+    return base
+
+def template_installation(reference: str, details: str, extras_block: str) -> str:
+    # fixed header + fixed closing, variable details in the middle
+    details = details.strip() if details else "No issues reported."
+    base = f"""
 WJS Large Carmanah - {reference} Installation Summary
 
-Upon arrival at the site, the retailer indicated the preferred installation location and height.
+Upon arrival at the site, the retailer indicated the preferred installation location and desired height for the sign.
 
-{details_final}
+{details}
 
-After completion, the equipment was tested and verified as operational.
+After completion, I explained the work performed to the retailer and demonstrated that the equipment was operating correctly.
 """.strip()
 
-    else:
-        texto_final = f"""
+    if extras_block:
+        base += "\n\n" + extras_block
+    return base
+
+def template_deinstallation(reference: str, details: str, extras_block: str) -> str:
+    details = details.strip() if details else "No issues reported."
+    base = f"""
 WJS Sign Deinstallation Summary – {reference}
 
 Upon arrival at the site, the retailer indicated the sign to be removed.
 
-{details_final}
+{details}
 
 The equipment is being returned to the warehouse.
 """.strip()
+
+    if extras_block:
+        base += "\n\n" + extras_block
+    return base
+
+# =====================
+# UI FORM
+# =====================
+with st.form("report_form"):
+    report_type = st.selectbox("📄 Report Type", ["PM", "INSTALLATION", "DEINSTALLATION"])
+
+    use_ai = st.checkbox(
+        "🤖 Use AI to polish ONLY the 'Details' section (keeps layout fixed)",
+        value=True
+    )
+
+    if use_ai and not client:
+        st.warning("AI is ON, but OPENAI_API_KEY is not set in secrets. I will use your text as-is.")
+
+    local = st.text_input("📍 Place Name", placeholder="Example: Gateway Newstand 434")
+    reference = st.text_input("🔢 Reference Number (RDL / RL)", placeholder="Example: RDL 43741 / RL 601962")
+
+    descricao = st.text_area(
+        "📝 Details (facts only — what happened / issues / time / actions taken)",
+        placeholder="Example:\nTransceiver needed reconnection several times; cable issue added ~35 minutes. Equipment tested OK."
+    )
+
+    st.markdown("### 🔧 Additional Materials Used")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        cat5 = st.checkbox("CAT5 Network Cable")
+        extension = st.checkbox("Power Extension")
+        power_supply = st.checkbox("Power Supply")
+        transceiver = st.checkbox("Transceiver")
+
+    with col2:
+        router = st.checkbox("Router")
+        mounting = st.checkbox("Mounting Hardware")
+        adapters = st.checkbox("Adapters")
+
+    extras_custom = st.text_area(
+        "➕ Other materials (one per line)",
+        placeholder="Cable ties\nVelcro straps\nEthernet coupler"
+    )
+
+    submitted = st.form_submit_button("✅ Generate Report")
+
+# =====================
+# BUILD REPORT
+# =====================
+if submitted:
+    # Extras list
+    itens_extras = []
+    if cat5: itens_extras.append("CAT5 network cable")
+    if extension: itens_extras.append("Power extension")
+    if power_supply: itens_extras.append("Power supply")
+    if transceiver: itens_extras.append("Transceiver")
+    if router: itens_extras.append("Router")
+    if mounting: itens_extras.append("Mounting hardware")
+    if adapters: itens_extras.append("Adapters")
+
+    if extras_custom.strip():
+        itens_extras.extend([i.strip() for i in extras_custom.split("\n") if i.strip()])
+
+    extras_block = format_extras(itens_extras)
+
+    # Polishing only the details section (optional)
+    details_final = descricao.strip()
+    if use_ai and details_final:
+        with st.spinner("Polishing details with AI..."):
+            details_final = polish_details_ai(details_final)
+
+    # Generate final text using fixed templates
+    if report_type == "PM":
+        texto_final = template_pm(local.strip(), reference.strip(), extras_block)
+    elif report_type == "INSTALLATION":
+        texto_final = template_installation(reference.strip(), details_final, extras_block)
+    else:
+        texto_final = template_deinstallation(reference.strip(), details_final, extras_block)
 
     # =====================
     # OUTPUT
     # =====================
     st.divider()
-    st.subheader("📄 Final Report")
-    st.code(texto_final)
+    st.subheader("📄 Generated Report")
+    st.code(texto_final, language="text")
 
-    col1, col2 = st.columns(2)
-    with col1:
+    colA, colB = st.columns(2)
+    with colA:
         copy_to_clipboard_button(texto_final)
-    with col2:
+
+    with colB:
         st.download_button(
             "⬇️ Download Report (.txt)",
-            texto_final,
-            file_name=f"{report_type.lower()}_report.txt"
+            data=texto_final,
+            file_name=f"{report_type.lower()}_report.txt",
+            mime="text/plain",
         )
-
-    # ---------- PM OUTPUTS ----------
-    if report_type == "PM":
-        st.divider()
-        st.subheader("📎 PM Attachments")
-
-        st.download_button(
-            "⬇️ Download SST Components Excel",
-            excel_bytes,
-            file_name="PM_SST_Components.xlsx"
-        )
-
-        st.subheader("🏷️ Labels (Print & Attach)")
-        st.code(labels_text)
-
-        st.subheader("📌 Component List (Inside Machine)")
-        st.code(component_summary)
