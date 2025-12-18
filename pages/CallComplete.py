@@ -192,7 +192,6 @@ with st.form("report_form"):
         transceiver = st.checkbox("Transceiver")
 
     with col2:
-        router = st.checkbox("Router")
         mounting = st.checkbox("Mounting Hardware")
         adapters = st.checkbox("Adapters")
 
@@ -213,7 +212,6 @@ if submitted:
     if extension: itens_extras.append("Power extension")
     if power_supply: itens_extras.append("Power supply")
     if transceiver: itens_extras.append("Transceiver")
-    if router: itens_extras.append("Router")
     if mounting: itens_extras.append("Mounting hardware")
     if adapters: itens_extras.append("Adapters")
 
