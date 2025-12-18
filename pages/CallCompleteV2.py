@@ -1,14 +1,16 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 from io import BytesIO
+
+# QR / Barcode Scanner
+from streamlit_qrcode_scanner import qrcode_scanner
 
 # =====================
 # CONFIG
 # =====================
-st.set_page_config(page_title="PM SST – Guided Scanner", layout="centered")
+st.set_page_config(page_title="PM SST – Guided Scan", layout="centered")
 st.title("🧾 PM SST – Guided Component Scan")
-st.caption("Follow the exact sequence shown inside the machine")
+st.caption("Follow the exact component order shown inside the machine")
 st.divider()
 
 # =====================
@@ -47,35 +49,6 @@ if "pm_data" not in st.session_state:
     }
 
 # =====================
-# CAMERA SCANNER
-# =====================
-def camera_scanner(target_key):
-    components.html(
-        f"""
-        <div id="reader" style="width:300px"></div>
-        <script src="https://unpkg.com/html5-qrcode"></script>
-        <script>
-        const scanner = new Html5Qrcode("reader");
-        scanner.start(
-            {{ facingMode: "environment" }},
-            {{ fps: 10, qrbox: 250 }},
-            (decodedText) => {{
-                const input = window.parent.document.querySelector(
-                    'input[data-testid="stTextInput"][aria-label="Barcode"]'
-                );
-                if (input) {{
-                    input.value = decodedText;
-                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                }}
-                scanner.stop();
-            }}
-        );
-        </script>
-        """,
-        height=350
-    )
-
-# =====================
 # UI – PASSO ATUAL
 # =====================
 step = st.session_state.pm_step
@@ -86,32 +59,45 @@ if step < TOTAL_STEPS:
     st.subheader(f"Step {step + 1} / {TOTAL_STEPS}")
     st.markdown(f"### 🔹 {component}")
 
+    # Campos
     serial = st.text_input(
         "Serial Number",
-        value=st.session_state.pm_data[component]["Serial"]
+        value=st.session_state.pm_data[component]["Serial"],
+        key=f"sn_{component}"
     )
 
     barcode = st.text_input(
         "Barcode",
-        value=st.session_state.pm_data[component]["Barcode"]
+        value=st.session_state.pm_data[component]["Barcode"],
+        key=f"bc_{component}"
     )
 
-    with st.expander("📷 Scan barcode with camera"):
-        camera_scanner(component)
+    # =====================
+    # SCANNER (CÂMERA)
+    # =====================
+    st.markdown("### 📷 Scan barcode with camera")
+
+    scanned_code = qrcode_scanner(
+        key=f"scanner_{component}",
+        placeholder="Point the camera at the barcode"
+    )
+
+    if scanned_code:
+        st.session_state.pm_data[component]["Barcode"] = scanned_code
+        st.session_state.pm_data[component]["Serial"] = scanned_code
+        st.success(f"Scanned: {scanned_code}")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.checkbox("Use Barcode as Serial Number"):
-            serial = barcode
+        if st.checkbox("Use Barcode as Serial Number", key=f"use_bc_{component}"):
+            st.session_state.pm_data[component]["Serial"] = st.session_state.pm_data[component]["Barcode"]
 
     with col2:
         if st.button("✅ Save & Next"):
-            if not barcode.strip():
+            if not st.session_state.pm_data[component]["Barcode"].strip():
                 st.warning("Please scan the barcode before continuing.")
             else:
-                st.session_state.pm_data[component]["Serial"] = serial
-                st.session_state.pm_data[component]["Barcode"] = barcode
                 st.session_state.pm_step += 1
                 st.rerun()
 
@@ -133,7 +119,9 @@ else:
     st.subheader("📊 Collected Components")
     st.dataframe(df, use_container_width=True)
 
-    # Excel
+    # =====================
+    # EXCEL
+    # =====================
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="SST Components")
@@ -145,7 +133,9 @@ else:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # Labels
+    # =====================
+    # LABELS
+    # =====================
     st.subheader("🏷️ Labels (Print & Attach)")
     labels = []
     for _, r in df.iterrows():
@@ -156,13 +146,18 @@ else:
         )
     st.code("\n\n---\n\n".join(labels))
 
-    # Component List (igual à foto)
+    # =====================
+    # COMPONENT LIST (IGUAL À FOTO)
+    # =====================
     st.subheader("📌 Component List (Inside SST)")
     summary = ["COMPONENT LIST"]
     for _, r in df.iterrows():
         summary.append(f"{r['Component']} – {r['Serial Number']}")
     st.code("\n".join(summary))
 
+    # =====================
+    # RESET
+    # =====================
     if st.button("🔁 Start New PM"):
         st.session_state.pm_step = 0
         st.session_state.pm_data = {
