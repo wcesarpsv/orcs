@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from openai import OpenAI
 
 # =====================
@@ -34,6 +35,38 @@ def gerar_texto_ai(prompt):
         temperature=0.2
     )
     return response.choices[0].message.content.strip()
+
+# =====================
+# BOTÃO COPY
+# =====================
+def copy_to_clipboard_button(text):
+    components.html(
+        f"""
+        <textarea id="clipboard-text" style="display:none;">{text}</textarea>
+        <button onclick="copyText()" 
+            style="
+                background-color:#2563eb;
+                color:white;
+                border:none;
+                padding:10px 16px;
+                border-radius:6px;
+                font-size:14px;
+                cursor:pointer;
+            ">
+            📋 Copy to clipboard
+        </button>
+
+        <script>
+        function copyText() {{
+            const text = document.getElementById("clipboard-text").value;
+            navigator.clipboard.writeText(text).then(() => {{
+                alert("Report copied to clipboard!");
+            }});
+        }}
+        </script>
+        """,
+        height=60
+    )
 
 # =====================
 # FORMULÁRIO
@@ -118,7 +151,7 @@ Do not add assumptions or steps not mentioned.
 """
 
     # =====================
-    # TEMPLATE FIXO (FALLBACK)
+    # TEMPLATE FIXO
     # =====================
     def gerar_template_fixo():
         if report_type == "PM":
@@ -167,9 +200,15 @@ The equipment is being returned to the warehouse.
     st.subheader("📄 Generated Report")
     st.code(texto_final, language="text")
 
-    st.download_button(
-        "⬇️ Download Report (.txt)",
-        data=texto_final,
-        file_name=f"{report_type.lower()}_report.txt",
-        mime="text/plain"
-    )
+    col1, col2 = st.columns(2)
+
+    with col1:
+        copy_to_clipboard_button(texto_final)
+
+    with col2:
+        st.download_button(
+            "⬇️ Download Report (.txt)",
+            data=texto_final,
+            file_name=f"{report_type.lower()}_report.txt",
+            mime="text/plain"
+        )
