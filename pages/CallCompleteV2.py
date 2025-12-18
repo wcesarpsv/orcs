@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-
 from streamlit_qrcode_scanner import qrcode_scanner
 
 # =====================
@@ -13,7 +12,7 @@ st.caption("Follow the exact component order shown inside the machine")
 st.divider()
 
 # =====================
-# SEQUÊNCIA OFICIAL (IGUAL À FOTO)
+# SEQUÊNCIA OFICIAL
 # =====================
 PM_SEQUENCE = [
     "Burster 1",
@@ -52,8 +51,12 @@ if "pm_scanned" not in st.session_state:
         comp: False for comp in PM_SEQUENCE
     }
 
+# 🔑 BUFFER GLOBAL DO SCANNER
+if "scanner_buffer" not in st.session_state:
+    st.session_state.scanner_buffer = None
+
 # =====================
-# UI – PASSO ATUAL
+# PASSO ATUAL
 # =====================
 step = st.session_state.pm_step
 
@@ -63,54 +66,56 @@ if step < TOTAL_STEPS:
     st.subheader(f"Step {step + 1} / {TOTAL_STEPS}")
     st.markdown(f"## 🔒 CURRENT COMPONENT: **{component}**")
 
-    # Campos (bloqueados após scan)
+    # Campos (somente leitura após scan)
     st.text_input(
         "Serial Number",
         value=st.session_state.pm_data[component]["Serial"],
-        key=f"sn_{component}",
-        disabled=st.session_state.pm_scanned[component]
+        disabled=True,
     )
 
     st.text_input(
         "Barcode",
         value=st.session_state.pm_data[component]["Barcode"],
-        key=f"bc_{component}",
-        disabled=st.session_state.pm_scanned[component]
+        disabled=True,
     )
 
     # =====================
-    # SCANNER (SÓ SE NÃO ESCANEADO)
+    # SCANNER (sempre ativo, mas controlado por buffer)
     # =====================
-    if not st.session_state.pm_scanned[component]:
-        st.markdown("### 📷 Scan barcode with camera")
+    st.markdown("### 📷 Scan barcode with camera")
 
-        scanned_code = qrcode_scanner()
+    scanned = qrcode_scanner()
 
-        if scanned_code:
-            if len(scanned_code) < 6:
-                st.error("Invalid barcode. Please rescan.")
-            else:
-                st.session_state.pm_data[component]["Barcode"] = scanned_code
-                st.session_state.pm_data[component]["Serial"] = scanned_code
-                st.session_state.pm_scanned[component] = True
-
-                st.success(f"✅ {component} scanned: {scanned_code}")
-
-                # AUTO-ADVANCE
-                st.session_state.pm_step += 1
-                st.rerun()
-    else:
-        st.info("✔️ Barcode already scanned for this component.")
+    # Se scanner retornou algo novo → guarda no buffer
+    if scanned and scanned != st.session_state.scanner_buffer:
+        st.session_state.scanner_buffer = scanned
 
     # =====================
-    # FALLBACK MANUAL
+    # CONSUME UMA ÚNICA VEZ
     # =====================
-    if st.button(
-        "⏭️ Next (manual)",
-        disabled=not st.session_state.pm_scanned[component]
+    if (
+        st.session_state.scanner_buffer
+        and not st.session_state.pm_scanned[component]
     ):
-        st.session_state.pm_step += 1
-        st.rerun()
+        code = st.session_state.scanner_buffer
+
+        if len(code) < 6:
+            st.error("Invalid barcode. Please rescan.")
+            st.session_state.scanner_buffer = None
+        else:
+            # Grava SOMENTE no componente atual
+            st.session_state.pm_data[component]["Barcode"] = code
+            st.session_state.pm_data[component]["Serial"] = code
+            st.session_state.pm_scanned[component] = True
+
+            # 🔥 LIMPA O BUFFER (CHAVE DO PROBLEMA)
+            st.session_state.scanner_buffer = None
+
+            st.success(f"✅ {component} scanned: {code}")
+
+            # AUTO-ADVANCE
+            st.session_state.pm_step += 1
+            st.rerun()
 
 else:
     # =====================
@@ -158,7 +163,7 @@ else:
     st.code("\n\n---\n\n".join(labels))
 
     # =====================
-    # COMPONENT LIST (IGUAL À FOTO)
+    # COMPONENT LIST
     # =====================
     st.subheader("📌 Component List (Inside SST)")
     summary = ["COMPONENT LIST"]
@@ -178,4 +183,5 @@ else:
         st.session_state.pm_scanned = {
             comp: False for comp in PM_SEQUENCE
         }
+        st.session_state.scanner_buffer = None
         st.rerun()
