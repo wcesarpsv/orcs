@@ -62,6 +62,14 @@ step = st.session_state.pm_step
 
 if step < TOTAL_STEPS:
     component = PM_SEQUENCE[step]
+    
+    # 🔥 LIMPA O BUFFER SEMPRE QUE MUDAR DE COMPONENTE
+    if "last_component" not in st.session_state:
+        st.session_state.last_component = component
+    
+    if st.session_state.last_component != component:
+        st.session_state.scanner_buffer = None
+        st.session_state.last_component = component
 
     st.subheader(f"Step {step + 1} / {TOTAL_STEPS}")
     st.markdown(f"## 🔒 CURRENT COMPONENT: **{component}**")
@@ -71,12 +79,14 @@ if step < TOTAL_STEPS:
         "Serial Number",
         value=st.session_state.pm_data[component]["Serial"],
         disabled=True,
+        key=f"serial_{component}"
     )
 
     st.text_input(
         "Barcode",
         value=st.session_state.pm_data[component]["Barcode"],
         disabled=True,
+        key=f"barcode_{component}"
     )
 
     # =====================
@@ -84,11 +94,13 @@ if step < TOTAL_STEPS:
     # =====================
     st.markdown("### 📷 Scan barcode with camera")
 
-    scanned = qrcode_scanner()
+    # 🔥 Use uma chave única para cada componente
+    scanned = qrcode_scanner(key=f"scanner_{component}")
 
     # Se scanner retornou algo novo → guarda no buffer
     if scanned and scanned != st.session_state.scanner_buffer:
         st.session_state.scanner_buffer = scanned
+        st.rerun()  # Atualiza imediatamente
 
     # =====================
     # CONSUME UMA ÚNICA VEZ
@@ -113,7 +125,12 @@ if step < TOTAL_STEPS:
 
             st.success(f"✅ {component} scanned: {code}")
 
-            # AUTO-ADVANCE
+            # Aguarda um pouco para mostrar o sucesso
+            st.balloons()
+            
+            # AUTO-ADVANCE com pequeno delay
+            import time
+            time.sleep(0.5)
             st.session_state.pm_step += 1
             st.rerun()
 
@@ -175,13 +192,9 @@ else:
     # RESET
     # =====================
     if st.button("🔁 Start New PM"):
-        st.session_state.pm_step = 0
-        st.session_state.pm_data = {
-            comp: {"Serial": "", "Barcode": ""}
-            for comp in PM_SEQUENCE
-        }
-        st.session_state.pm_scanned = {
-            comp: False for comp in PM_SEQUENCE
-        }
-        st.session_state.scanner_buffer = None
+        # Limpa TODOS os estados
+        keys_to_clear = ["pm_step", "pm_data", "pm_scanned", "scanner_buffer", "last_component"]
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
         st.rerun()
