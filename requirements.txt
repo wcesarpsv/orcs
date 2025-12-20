@@ -9,3 +9,5 @@ faiss-cpu
 pymupdf
 langchain-openai
 openpyxl
+python-barcode
+pillow
