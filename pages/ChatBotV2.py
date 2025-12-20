@@ -3,6 +3,7 @@ import os
 import json
 import fitz  # PyMuPDF
 import re
+import time
 
 # LangChain
 from langchain_community.vectorstores import FAISS
@@ -49,69 +50,14 @@ IMAGE_QUERY_MAP = config.get("image_query_map", [])
 # ================= EXTRACT SERIAL NUMBERS FROM TEXT =================
 def extract_serial_numbers(text):
     """Extrai números de série únicos do texto"""
-    # Padrões específicos para o formato mostrado
     serials = set()
     
-    # Padrão 1: {"pkey":"251213132233356959381640204AZ"}
+    # Padrão para pkey
     pkey_pattern = r'"pkey"\s*:\s*"([A-Z0-9]+)"'
     pkey_matches = re.findall(pkey_pattern, text)
     for match in pkey_matches:
-        if match and len(match) > 10:  # Verifica se tem comprimento razoável
+        if match and len(match) > 10:
             serials.add(match)
-    
-    # Padrão 2: lastNode":"DON9" (extrair DON9)
-    node_pattern = r'"lastNode"\s*:\s*"([A-Z0-9]+)"'
-    node_matches = re.findall(node_pattern, text)
-    for match in node_matches:
-        if match and match != "DON9":  # Filtra DON9 se for sempre o mesmo
-            serials.add(match)
-    
-    # Padrão 3: Nome do componente + serial (ex: Burster 1 – {"lastNode":"DON9","cids":{"pkey":"251213132233356959381640204AZ"}})
-    component_pattern = r'([A-Za-z\s]+)\s*\d*\s*[–\-:]\s*\{[^}]+\"pkey\"\s*:\s*\"([A-Z0-9]+)\"'
-    comp_matches = re.findall(component_pattern, text)
-    for comp_name, serial in comp_matches:
-        if serial and len(serial) > 10:
-            serials.add(f"{comp_name.strip()}: {serial}")
-    
-    # Padrão 4: Códigos longos alfanuméricos
-    long_code_pattern = r'\b([A-Z0-9]{20,30})\b'
-    long_matches = re.findall(long_code_pattern, text)
-    for match in long_matches:
-        # Verificar se não é um número comum
-        if not match.isdigit() and not all(c == '0' for c in match):
-            serials.add(match)
-    
-    # Padrão 5: Capturar todo o objeto JSON para análise posterior
-    json_pattern = r'\{[^{}]*"pkey"[^{}]*\}'
-    json_matches = re.findall(json_pattern, text)
-    for json_str in json_matches:
-        try:
-            data = json.loads(json_str.replace("'", '"'))
-            if "pkey" in str(data):  # Procura pkey em qualquer nível
-                # Função recursiva para encontrar pkey
-                def find_pkey(obj):
-                    if isinstance(obj, dict):
-                        if "pkey" in obj:
-                            return obj["pkey"]
-                        for value in obj.values():
-                            result = find_pkey(value)
-                            if result:
-                                return result
-                    elif isinstance(obj, list):
-                        for item in obj:
-                            result = find_pkey(item)
-                            if result:
-                                return result
-                    return None
-                
-                pkey_value = find_pkey(data)
-                if pkey_value:
-                    serials.add(pkey_value)
-        except:
-            # Se não conseguir parsear como JSON, tenta extrair diretamente
-            pkey_direct = re.search(r'"pkey"\s*:\s*"([^"]+)"', json_str)
-            if pkey_direct:
-                serials.add(pkey_direct.group(1))
     
     return list(serials)
 
@@ -123,7 +69,6 @@ def extract_components_with_serials(text):
     
     # Dividir por linhas
     lines = text.split('\n')
-    current_component = None
     
     for line in lines:
         line = line.strip()
@@ -143,7 +88,8 @@ def extract_components_with_serials(text):
                 components.append({
                     "component": component_name,
                     "serial": serial,
-                    "full_json": json_part
+                    "json_data": json_part,
+                    "scanned": False  # Flag para controlar se já foi escaneado
                 })
     
     return components
@@ -156,7 +102,6 @@ def load_vector_db():
         return None
 
     docs = []
-    all_serials = []  # Armazenar todos os números de série encontrados
     all_components = []  # Armazenar todos os componentes
 
     for root, _, files in os.walk(DOC_DIR):
@@ -183,18 +128,13 @@ def load_vector_db():
                 continue
 
             if text.strip():
-                # Extrair números de série deste documento
-                doc_serials = extract_serial_numbers(text)
-                all_serials.extend(doc_serials)
-                
                 # Extrair componentes com seus seriais
                 doc_components = extract_components_with_serials(text)
                 all_components.extend(doc_components)
                 
-                # Adicionar metadados com números de série e componentes
+                # Adicionar metadados com componentes
                 metadata = {
                     "source": os.path.relpath(path, DOC_DIR),
-                    "serials": doc_serials if doc_serials else [],
                     "components": doc_components if doc_components else []
                 }
                 
@@ -216,15 +156,12 @@ def load_vector_db():
 
     # Preservar metadados nos chunks
     for chunk in chunks:
-        if "serials" not in chunk.metadata:
-            chunk.metadata["serials"] = []
         if "components" not in chunk.metadata:
             chunk.metadata["components"] = []
 
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
     # Armazenar dados na sessão
-    st.session_state.all_serials = list(set(all_serials))
     st.session_state.all_components = all_components
     
     return FAISS.from_documents(chunks, embeddings)
@@ -241,28 +178,38 @@ with st.sidebar:
     st.markdown("### 📚 Guide")
     st.markdown(
         """
-        **How to use:**
-        1. Ask a question about work procedures.
-        2. If you need a photo, ask for it (e.g., "show me the serial number").
-        3. Follow step-by-step instructions.
+        **Serial Scanning Mode:**
+        1. Click 'Start Serial Scan'
+        2. Scan first component's barcode
+        3. Click 'Next' to move to next component
+        4. Repeat for all components
+        5. Click 'Finish' when done
         """
     )
     
-    # Mostrar números de série encontrados
-    if 'all_serials' in st.session_state and st.session_state.all_serials:
-        with st.expander("📋 Serial Numbers Found"):
-            for i, serial in enumerate(st.session_state.all_serials[:10], 1):
-                st.code(serial, language=None)
-            if len(st.session_state.all_serials) > 10:
-                st.write(f"... and {len(st.session_state.all_serials) - 10} more")
+    # Inicializar estado de varredura
+    if 'scan_mode' not in st.session_state:
+        st.session_state.scan_mode = False
+    if 'current_scan_index' not in st.session_state:
+        st.session_state.current_scan_index = 0
+    if 'scanned_components' not in st.session_state:
+        st.session_state.scanned_components = []
+    if 'expected_components' not in st.session_state:
+        st.session_state.expected_components = []
     
-    # Mostrar componentes encontrados
-    if 'all_components' in st.session_state and st.session_state.all_components:
-        with st.expander("🔧 Components Found"):
-            for comp in st.session_state.all_components[:10]:
-                st.write(f"**{comp['component']}**: `{comp['serial']}`")
-            if len(st.session_state.all_components) > 10:
-                st.write(f"... and {len(st.session_state.all_components) - 10} more")
+    # Botão para iniciar modo de varredura
+    if not st.session_state.scan_mode:
+        if st.button("🚀 Start Serial Scan", type="primary", use_container_width=True):
+            st.session_state.scan_mode = True
+            st.session_state.current_scan_index = 0
+            st.session_state.scanned_components = []
+            st.rerun()
+    else:
+        if st.button("🛑 Finish Scanning", type="secondary", use_container_width=True):
+            st.session_state.scan_mode = False
+            st.rerun()
+    
+    st.markdown("---")
     
     if st.button("Clear Chat History"):
         st.session_state.messages = []
@@ -272,6 +219,7 @@ with st.sidebar:
 # ================= INIT APP =================
 st.title("🛠️ Work Procedures Assistant")
 
+# Inicializar mensagens
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -289,164 +237,255 @@ else:
                 for img_path in message["images"]:
                     if os.path.exists(img_path):
                         st.image(img_path, width=IMAGE_WIDTH)
-            if "components" in message:
+
+    # ================= SERIAL SCANNING MODE =================
+    if st.session_state.scan_mode:
+        st.markdown("---")
+        st.header("🔍 Serial Scanning Mode")
+        
+        # Primeira vez: obter lista de componentes esperados
+        if not st.session_state.expected_components:
+            with st.spinner("Loading component list..."):
+                # Buscar no banco de dados
+                results = db.similarity_search("component list serial numbers", k=2)
+                all_components = []
+                for doc in results:
+                    if "components" in doc.metadata:
+                        all_components.extend(doc.metadata["components"])
+                
+                if all_components:
+                    # Remover duplicatas
+                    seen = set()
+                    unique_components = []
+                    for comp in all_components:
+                        if comp["component"] not in seen:
+                            seen.add(comp["component"])
+                            unique_components.append(comp)
+                    
+                    st.session_state.expected_components = unique_components
+                    st.success(f"Found {len(unique_components)} components to scan")
+        
+        # Mostrar progresso
+        if st.session_state.expected_components:
+            total = len(st.session_state.expected_components)
+            current = st.session_state.current_scan_index + 1
+            
+            # Barra de progresso
+            progress = current / total if total > 0 else 0
+            st.progress(progress, text=f"Component {current} of {total}")
+            
+            # Componente atual
+            current_component = st.session_state.expected_components[
+                min(st.session_state.current_scan_index, len(st.session_state.expected_components) - 1)
+            ]
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.subheader(f"🔧 {current_component['component']}")
+                st.info(f"**Expected Serial:** `{current_component['serial']}`")
+            
+            with col2:
+                st.metric("Status", f"{current}/{total}")
+            
+            # Área para escanear o código de barras
+            st.markdown("---")
+            st.subheader("📷 Scan Barcode")
+            
+            # Input para o serial escaneado
+            scanned_serial = st.text_input(
+                f"Scan barcode for {current_component['component']}:",
+                key=f"scan_input_{st.session_state.current_scan_index}",
+                placeholder="Scan barcode or enter serial manually..."
+            )
+            
+            # Botões de controle
+            col1, col2, col3 = st.columns([1, 2, 1])
+            
+            with col1:
+                if st.button("⏮️ Previous", disabled=st.session_state.current_scan_index == 0):
+                    st.session_state.current_scan_index = max(0, st.session_state.current_scan_index - 1)
+                    st.rerun()
+            
+            with col2:
+                if scanned_serial:
+                    # Verificar se o serial escaneado corresponde ao esperado
+                    if scanned_serial == current_component['serial']:
+                        st.success("✅ Serial matches!")
+                    else:
+                        st.warning(f"⚠️ Serial mismatch. Expected: {current_component['serial']}")
+                
+                if st.button("✅ Confirm & Next", type="primary", disabled=not scanned_serial):
+                    # Registrar o componente escaneado
+                    scanned_data = {
+                        "component": current_component['component'],
+                        "expected_serial": current_component['serial'],
+                        "scanned_serial": scanned_serial,
+                        "timestamp": time.time(),
+                        "match": scanned_serial == current_component['serial']
+                    }
+                    st.session_state.scanned_components.append(scanned_data)
+                    
+                    # Mover para o próximo componente
+                    if st.session_state.current_scan_index < len(st.session_state.expected_components) - 1:
+                        st.session_state.current_scan_index += 1
+                        st.rerun()
+                    else:
+                        # Último componente escaneado
+                        st.session_state.scan_mode = False
+                        st.success("🎉 All components scanned!")
+                        st.rerun()
+            
+            with col3:
+                if st.button("⏭️ Skip", type="secondary"):
+                    if st.session_state.current_scan_index < len(st.session_state.expected_components) - 1:
+                        st.session_state.current_scan_index += 1
+                        st.rerun()
+            
+            # Mostrar histórico de componentes escaneados
+            if st.session_state.scanned_components:
                 st.markdown("---")
-                st.subheader("🔧 Components Identified")
-                for comp in message["components"]:
+                st.subheader("📋 Scan History")
+                
+                for i, scan in enumerate(st.session_state.scanned_components):
+                    status = "✅" if scan['match'] else "❌"
                     col1, col2, col3 = st.columns([2, 3, 1])
                     with col1:
-                        st.write(f"**{comp['component']}**")
+                        st.write(f"{i+1}. {scan['component']}")
                     with col2:
-                        st.code(comp['serial'], language=None)
+                        if scan['match']:
+                            st.success(f"Scanned: `{scan['scanned_serial']}`")
+                        else:
+                            st.error(f"Scanned: `{scan['scanned_serial']}` (Expected: `{scan['expected_serial']}`)")
                     with col3:
-                        if st.button("📋", key=f"copy_{comp['serial']}"):
-                            st.write(f"Copied: {comp['serial']}")
-                            # Lógica para copiar para área de transferência aqui
-
-    # ================= CHAT INPUT =================
-    if prompt := st.chat_input("Ask a question about procedures..."):
-        # Add user message to history
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        # Process standard queries
-        q = prompt.lower()
-        response_images = []
-        response_content = ""
-        response_components = []
-
-        # Check for direct image requests
-        direct_image_found = False
-        for item in IMAGE_QUERY_MAP:
-            if any(k in q for k in item["keywords"]):
-                response_content = f"### 🖼️ {item['title']}\nHere is the image you requested."
-                response_images = item["images"]
-                direct_image_found = True
-                break
+                        st.write(status)
         
-        if not direct_image_found:
-            # RAG Search
-            results = db.similarity_search(prompt, k=3)
-            context = "\n\n".join(doc.page_content for doc in results)
-            
-            # Coletar componentes únicos de todos os resultados
-            unique_components = []
-            seen_serials = set()
-            
-            for doc in results:
-                if "components" in doc.metadata and doc.metadata["components"]:
-                    for comp in doc.metadata["components"]:
-                        if comp["serial"] not in seen_serials:
-                            seen_serials.add(comp["serial"])
-                            unique_components.append(comp)
-            
-            # Extrair componentes do prompt também
-            prompt_components = extract_components_with_serials(prompt)
-            for comp in prompt_components:
-                if comp["serial"] not in seen_serials:
-                    seen_serials.add(comp["serial"])
-                    unique_components.append(comp)
-            
-            response_components = unique_components
-            
-            # Se a pergunta é sobre números de série, adicionar ao contexto
-            serial_context = ""
-            if response_components:
-                component_list = "\n".join([f"- {comp['component']}: {comp['serial']}" for comp in response_components])
-                serial_context = f"\n\nComponents with serial numbers: \n{component_list}"
-
-            # Build conversation history for context
-            history_context = "\n".join(
-                [f"{m['role']}: {m['content']}" for m in st.session_state.messages[-5:]]
-            )
-
-            # Generate response
-            llm_response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a work procedures assistant. "
-                            "Answer ONLY using the provided documentation. "
-                            "When mentioning serial numbers, list each component separately with its specific serial number. "
-                            "Do NOT repeat the same serial number for different components. "
-                            "Always answer step-by-step when applicable. "
-                            "If the user asks for a photo, say: 'See the image below.' "
-                            "If the answer is not in the documents, say exactly: "
-                            "'This situation is not documented yet.'"
-                        )
-                    },
-                    {
-                        "role": "user",
-                        "content": f"History:\n{history_context}\n\nDocumentation:\n{context}{serial_context}\n\nQuestion: {prompt}"
-                    }
-                ]
-            )
-            
-            response_content = llm_response.choices[0].message.content
-
-            # Parse for Step Images
-            lines = response_content.split("\n")
-            current_step = None
-            
-            # Simple heuristic to find step numbers and associate images
-            for line in lines:
-                if line.strip() and line.lstrip()[0].isdigit():
-                    try:
-                        current_step = str(line.split(".")[0]) 
-                    except:
-                        pass
+        else:
+            st.warning("No components found in documents. Please check your documentation.")
+            if st.button("Exit Scan Mode"):
+                st.session_state.scan_mode = False
+                st.rerun()
+    
+    # ================= CHAT INPUT (Normal Mode) =================
+    else:
+        # Mostrar resumo se houve varredura
+        if st.session_state.scanned_components:
+            with st.expander("📊 Scan Summary", expanded=True):
+                total = len(st.session_state.scanned_components)
+                matches = sum(1 for s in st.session_state.scanned_components if s['match'])
                 
-                if current_step:
-                    # Check all sources in results to see if they match mapped images
-                    for doc in results:
-                        src = doc.metadata.get("source")
-                        if src in STEP_IMAGE_MAP and current_step in STEP_IMAGE_MAP[src]:
-                            imgs = STEP_IMAGE_MAP[src][current_step]
-                            for img in imgs:
-                                if img not in response_images:
-                                    response_images.append(img)
-
-        # Display Assistant Response
-        with st.chat_message("assistant"):
-            st.markdown(response_content)
-            
-            # Mostrar componentes encontrados em formato tabular
-            if response_components:
-                st.markdown("---")
-                st.subheader("🔧 Components Identified")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Total Scanned", total)
+                with col2:
+                    st.metric("Matches", f"{matches}/{total}")
                 
-                # Criar tabela
-                for i, comp in enumerate(response_components, 1):
-                    col1, col2, col3 = st.columns([3, 5, 1])
-                    with col1:
-                        st.markdown(f"**{comp['component']}**")
-                    with col2:
-                        st.code(comp['serial'], language=None)
-                    with col3:
-                        copy_key = f"copy_{comp['serial']}_{i}"
-                        if st.button("📋", key=copy_key, help="Copy serial number"):
-                            # Usar JavaScript para copiar para área de transferência
-                            js_code = f"""
-                            <script>
-                            navigator.clipboard.writeText("{comp['serial']}");
-                            </script>
-                            """
-                            st.components.v1.html(js_code)
-                            st.toast(f"Copied: {comp['serial']}", icon="✅")
-            
-            for img in response_images:
-                if os.path.exists(img):
-                    st.image(img, width=IMAGE_WIDTH)
-                else:
-                    st.warning(f"Image not found: {img}")
+                if st.button("Generate Scan Report"):
+                    # Gerar relatório
+                    report_lines = ["# Serial Scan Report", ""]
+                    for scan in st.session_state.scanned_components:
+                        status = "MATCH" if scan['match'] else "MISMATCH"
+                        report_lines.append(f"## {scan['component']}")
+                        report_lines.append(f"- Expected: `{scan['expected_serial']}`")
+                        report_lines.append(f"- Scanned: `{scan['scanned_serial']}`")
+                        report_lines.append(f"- Status: **{status}**")
+                        report_lines.append("")
+                    
+                    report_text = "\n".join(report_lines)
+                    st.download_button(
+                        label="📥 Download Report",
+                        data=report_text,
+                        file_name=f"serial_scan_report_{time.strftime('%Y%m%d_%H%M%S')}.md",
+                        mime="text/markdown"
+                    )
+        
+        # Chat normal
+        if prompt := st.chat_input("Ask a question about procedures..."):
+            # Add user message to history
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
-        # Save to history
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": response_content,
-            "images": response_images,
-            "components": response_components
-        })
+            # Process standard queries
+            q = prompt.lower()
+            response_images = []
+            response_content = ""
+
+            # Check for direct image requests
+            direct_image_found = False
+            for item in IMAGE_QUERY_MAP:
+                if any(k in q for k in item["keywords"]):
+                    response_content = f"### 🖼️ {item['title']}\nHere is the image you requested."
+                    response_images = item["images"]
+                    direct_image_found = True
+                    break
+            
+            if not direct_image_found:
+                # RAG Search
+                results = db.similarity_search(prompt, k=3)
+                context = "\n\n".join(doc.page_content for doc in results)
+
+                # Build conversation history for context
+                history_context = "\n".join(
+                    [f"{m['role']}: {m['content']}" for m in st.session_state.messages[-5:]]
+                )
+
+                # Generate response
+                llm_response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a work procedures assistant. "
+                                "Answer ONLY using the provided documentation. "
+                                "Always answer step-by-step when applicable. "
+                                "If the user asks for a photo, say: 'See the image below.' "
+                                "If the answer is not in the documents, say exactly: "
+                                "'This situation is not documented yet.'"
+                            )
+                        },
+                        {
+                            "role": "user",
+                            "content": f"History:\n{history_context}\n\nDocumentation:\n{context}\n\nQuestion: {prompt}"
+                        }
+                    ]
+                )
+                
+                response_content = llm_response.choices[0].message.content
+
+                # Parse for Step Images
+                lines = response_content.split("\n")
+                current_step = None
+                
+                for line in lines:
+                    if line.strip() and line.lstrip()[0].isdigit():
+                        try:
+                            current_step = str(line.split(".")[0]) 
+                        except:
+                            pass
+                    
+                    if current_step:
+                        # Check all sources in results to see if they match mapped images
+                        for doc in results:
+                            src = doc.metadata.get("source")
+                            if src in STEP_IMAGE_MAP and current_step in STEP_IMAGE_MAP[src]:
+                                imgs = STEP_IMAGE_MAP[src][current_step]
+                                for img in imgs:
+                                    if img not in response_images:
+                                        response_images.append(img)
+
+            # Display Assistant Response
+            with st.chat_message("assistant"):
+                st.markdown(response_content)
+                for img in response_images:
+                    if os.path.exists(img):
+                        st.image(img, width=IMAGE_WIDTH)
+                    else:
+                        st.warning(f"Image not found: {img}")
+
+            # Save to history
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": response_content,
+                "images": response_images
+            })
