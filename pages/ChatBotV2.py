@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import json
 import fitz  # PyMuPDF
+import re
 
 # LangChain
 from langchain_community.vectorstores import FAISS
@@ -45,6 +46,36 @@ STEP_IMAGE_MAP = config.get("step_image_map", {})
 IMAGE_QUERY_MAP = config.get("image_query_map", [])
 
 
+# ================= EXTRACT SERIAL NUMBERS FROM TEXT =================
+def extract_serial_numbers(text):
+    """Extrai números de série únicos do texto"""
+    # Padrões comuns para números de série
+    patterns = [
+        r'[A-Z]{2}\d{6}',  # Ex: AB123456
+        r'\d{2}[A-Z]{3}\d{5}',  # Ex: 12ABC12345
+        r'[A-Z]{3}\d{5}',  # Ex: ABC12345
+        r'SN[: ]?([A-Z0-9]{8,12})',  # SN: ABC123456
+        r'Serial[: ]?([A-Z0-9]{8,12})',  # Serial: ABC123456
+        r'[A-Z0-9]{10,12}',  # Genérico para 10-12 caracteres alfanuméricos
+    ]
+    
+    serials = set()  # Usar set para evitar duplicatas
+    for pattern in patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        for match in matches:
+            if isinstance(match, tuple):
+                # Se o padrão tem grupos de captura, pegar o primeiro
+                serial = match[0].strip().upper()
+            else:
+                serial = match.strip().upper()
+            
+            # Validar que não é apenas um número comum
+            if len(serial) >= 8 and not serial.isdigit():  # Números de série geralmente têm letras
+                serials.add(serial)
+    
+    return list(serials)
+
+
 # ================= LOAD DOCUMENTS & VECTOR DB =================
 @st.cache_resource
 def load_vector_db():
@@ -52,10 +83,12 @@ def load_vector_db():
         return None
 
     docs = []
+    all_serials = []  # Armazenar todos os números de série encontrados
 
     for root, _, files in os.walk(DOC_DIR):
         for file in files:
             path = os.path.join(root, file)
+            text = ""
 
             # PDF
             if file.lower().endswith(".pdf"):
@@ -76,10 +109,20 @@ def load_vector_db():
                 continue
 
             if text.strip():
+                # Extrair números de série deste documento
+                doc_serials = extract_serial_numbers(text)
+                all_serials.extend(doc_serials)
+                
+                # Adicionar metadados com números de série
+                metadata = {
+                    "source": os.path.relpath(path, DOC_DIR),
+                    "serials": doc_serials if doc_serials else []
+                }
+                
                 docs.append(
                     Document(
                         page_content=text,
-                        metadata={"source": os.path.relpath(path, DOC_DIR)}
+                        metadata=metadata
                     )
                 )
 
@@ -92,8 +135,16 @@ def load_vector_db():
     )
     chunks = splitter.split_documents(docs)
 
+    # Preservar metadados de números de série nos chunks
+    for chunk in chunks:
+        if "serials" not in chunk.metadata:
+            chunk.metadata["serials"] = []
+
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
+    # Armazenar números de série totais na sessão
+    st.session_state.all_serials = list(set(all_serials))
+    
     return FAISS.from_documents(chunks, embeddings)
 
 
@@ -114,6 +165,15 @@ with st.sidebar:
         3. Follow step-by-step instructions.
         """
     )
+    
+    # Mostrar números de série encontrados
+    if 'all_serials' in st.session_state and st.session_state.all_serials:
+        with st.expander("📋 Serial Numbers Found"):
+            for i, serial in enumerate(st.session_state.all_serials[:10], 1):
+                st.write(f"{i}. {serial}")
+            if len(st.session_state.all_serials) > 10:
+                st.write(f"... and {len(st.session_state.all_serials) - 10} more")
+    
     if st.button("Clear Chat History"):
         st.session_state.messages = []
         st.rerun()
@@ -139,6 +199,9 @@ else:
                 for img_path in message["images"]:
                     if os.path.exists(img_path):
                         st.image(img_path, width=IMAGE_WIDTH)
+            if "serials" in message:
+                for serial_info in message["serials"]:
+                    st.info(f"**Serial:** {serial_info}")
 
     # ================= CHAT INPUT =================
     if prompt := st.chat_input("Ask a question about procedures..."):
@@ -151,6 +214,7 @@ else:
         q = prompt.lower()
         response_images = []
         response_content = ""
+        response_serials = []
 
         # Check for direct image requests
         direct_image_found = False
@@ -162,9 +226,28 @@ else:
                 break
         
         if not direct_image_found:
-             # RAG Search
+            # RAG Search
             results = db.similarity_search(prompt, k=3)
             context = "\n\n".join(doc.page_content for doc in results)
+            
+            # Coletar números de série únicos de todos os resultados
+            unique_serials = set()
+            for doc in results:
+                if "serials" in doc.metadata and doc.metadata["serials"]:
+                    unique_serials.update(doc.metadata["serials"])
+            
+            # Extrair números de série do prompt também
+            prompt_serials = extract_serial_numbers(prompt)
+            unique_serials.update(prompt_serials)
+            
+            # Converter para lista ordenada
+            response_serials = sorted(list(unique_serials))
+            
+            # Se a pergunta é sobre números de série, adicionar ao contexto
+            serial_context = ""
+            if response_serials:
+                serial_list = "\n".join([f"- {serial}" for serial in response_serials])
+                serial_context = f"\n\nSerial numbers found: \n{serial_list}"
 
             # Build conversation history for context
             history_context = "\n".join(
@@ -180,6 +263,7 @@ else:
                         "content": (
                             "You are a work procedures assistant. "
                             "Answer ONLY using the provided documentation. "
+                            "When mentioning serial numbers, list them all distinctly. "
                             "Always answer step-by-step when applicable. "
                             "If the user asks for a photo, say: 'See the image below.' "
                             "If the answer is not in the documents, say exactly: "
@@ -188,7 +272,7 @@ else:
                     },
                     {
                         "role": "user",
-                        "content": f"History:\n{history_context}\n\nDocumentation:\n{context}\n\nQuestion: {prompt}"
+                        "content": f"History:\n{history_context}\n\nDocumentation:\n{context}{serial_context}\n\nQuestion: {prompt}"
                     }
                 ]
             )
@@ -200,11 +284,9 @@ else:
             current_step = None
             
             # Simple heuristic to find step numbers and associate images
-            # Re-using the logic from the original code but adapted for our config structure
             for line in lines:
                 if line.strip() and line.lstrip()[0].isdigit():
                     try:
-                        # naive parser for "1. Do something" -> 1
                         current_step = str(line.split(".")[0]) 
                     except:
                         pass
@@ -213,8 +295,6 @@ else:
                     # Check all sources in results to see if they match mapped images
                     for doc in results:
                         src = doc.metadata.get("source")
-                        # Normalize path slashes for cross-platform mapping check if needed, 
-                        # but keeping simple for now as per original code logic
                         if src in STEP_IMAGE_MAP and current_step in STEP_IMAGE_MAP[src]:
                             imgs = STEP_IMAGE_MAP[src][current_step]
                             for img in imgs:
@@ -224,6 +304,20 @@ else:
         # Display Assistant Response
         with st.chat_message("assistant"):
             st.markdown(response_content)
+            
+            # Mostrar números de série encontrados
+            if response_serials:
+                st.markdown("---")
+                st.subheader("🔢 Serial Numbers Identified")
+                for i, serial in enumerate(response_serials, 1):
+                    col1, col2 = st.columns([1, 4])
+                    with col1:
+                        st.metric(label=f"Serial #{i}", value=serial)
+                    with col2:
+                        if st.button(f"Copy #{i}", key=f"copy_{serial}"):
+                            st.write(f"Copied: {serial}")
+                            # Aqui você pode adicionar lógica para copiar para área de transferência
+            
             for img in response_images:
                 if os.path.exists(img):
                     st.image(img, width=IMAGE_WIDTH)
@@ -234,5 +328,6 @@ else:
         st.session_state.messages.append({
             "role": "assistant",
             "content": response_content,
-            "images": response_images
+            "images": response_images,
+            "serials": response_serials
         })
