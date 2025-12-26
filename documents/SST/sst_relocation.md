@@ -28,6 +28,9 @@ SST Relocation
 
 # Pre-Visit Preparation
 
+![email SST Move Request](images/sst_relocation_4.png)
+
+
 
 
 Technicians will receive the retail location details, site information, and contact information, along with instructions specifying the type of relocation required. This could involve switching the site from cable to LTE or running new network cables to accommodate the SST’s new location.
@@ -70,9 +73,15 @@ Example of site survey:
 
 # On-Site Procedure
 
+![SST keys ](images/sst_relocation_8.png)
+
+
 
 
 ## Arrival and Retailer Engagement
+
+![photo of the SST in retailer mode ](images/sst_relocation_18.png)
+
 
 
 
@@ -81,6 +90,9 @@ Upon arrival, introduce yourself professionally and inform the retailer of the p
 Request the SST keys to perform the service, ensuring they are returned once the task is completed.
 
 ## Document the SST Status
+
+![3.	Backup Accounting Database](images/sst_relocation_26.jpeg)
+
 
 Take a photo of the SST in retailer mode to document its current status.
 
@@ -105,6 +117,9 @@ Take a photo of the inventory report for documentation.
 
 ## Backup Accounting Database
 
+![debug mode ](images/sst_relocation_12.jpeg)
+
+
 Enter debug mode by inserting the USB drive into one of the debug slots on the CPU. Navigate to:
 
 MAIN MENU > EXTENDED DIAGS > PERIPHERALS > ACCOUNTING NVRAM > BACKUP ACCOUNTING NVRAM
@@ -114,6 +129,9 @@ Once the backup is complete, power down the SST before proceeding with the move.
 
 
 ## Moving to the New Location
+
+![raceway to the back ](images/sst_relocation_13.png)
+
 
 If switching to an LTE router, stage the SST for LTE setup. This includes adding raceway to the back of the unit and securing network and power cables with two 45-degree cut pieces at the top.
 
@@ -149,6 +167,9 @@ Move the SST according to safe SST handling practices to the new requested locat
 
 ## Reactivating SST
 
+![reactivating SST](images/sst_relocation_19.jpeg)
+
+
 After relocating the SST and connecting the network cables, power on the SST in debug mode to restore the inventory data:
 
 MAIN MENU > EXTENDED DIAGS > PERIPHERALS > ACCOUNTING NVRAM > RESTORE ACCOUNTING NVRAM
@@ -160,6 +181,9 @@ Once the restore is successful, turn off the SST and remove the USB.
 
 
 ## Final Steps
+
+![inventory report ](images/sst_relocation_21.jpeg)
+
 
 Print an inventory report and verify that the SST is functioning as expected.
 
@@ -182,6 +206,9 @@ Test the pin pad by scanning an ID card and prompting for a purchase transaction
 
 
 ## Call Completion
+
+![call Clear Slip](images/sst_relocation_24.jpeg)
+
 
 Ensure the SST is fully operational, then return the keys to the retailer.
 
