@@ -11,3 +11,4 @@ langchain-openai
 openpyxl
 python-barcode
 pillow
+python-docx
