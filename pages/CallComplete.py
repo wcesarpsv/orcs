@@ -230,7 +230,7 @@ if submitted:
 
     # Generate final text using fixed templates
     if report_type == "PM":
-        texto_final = template_pm(local.strip(), reference.strip(), extras_block)
+        texto_final = template_pm(local.strip(), reference.strip(), details_final, extras_block)
     elif report_type == "INSTALLATION":
         texto_final = template_installation(reference.strip(), details_final, extras_block)
     else:
