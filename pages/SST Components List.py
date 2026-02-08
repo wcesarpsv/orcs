@@ -220,7 +220,7 @@ if step < TOTAL_STEPS:
                 
                 # Feedback
                 st.success(f"✅ {component} scanned and barcode generated!")
-                st.balloons()
+                #st.balloons()
                 
                 # Mostra preview
                 col1, col2 = st.columns(2)
