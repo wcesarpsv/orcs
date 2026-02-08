@@ -113,7 +113,7 @@ def format_extras(itens_extras: list[str]) -> str:
     lines = "\n".join([f"- {i}" for i in itens_extras])
     return f"Additional materials used:\n{lines}"
 
-def template_pm(local: str, reference: str, extras_block: str) -> str:
+def template_pm(local: str, reference: str, details: str, extras_block: str) -> str:
     base = f"""
 PM completed at {local} ({reference}) - Summary
 
