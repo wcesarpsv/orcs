@@ -115,7 +115,7 @@ def format_extras(itens_extras: list[str]) -> str:
 
 def template_pm(local: str, reference: str, extras_block: str) -> str:
     base = f"""
-PM completed at {local} ({reference})
+PM completed at {local} ({reference}) - Summary
 
 Burster bins, rollers, and all related peripherals were cleaned.
 Serial numbers for all components were recorded for database entry.
@@ -131,7 +131,7 @@ def template_installation(reference: str, details: str, extras_block: str) -> st
     # fixed header + fixed closing, variable details in the middle
     details = details.strip() if details else "No issues reported."
     base = f"""
-WJS Large Carmanah - {reference} Installation Summary
+WJS Large Carmanah - {local} ({reference}) - Installation Summary
 
 Upon arrival at the site, the retailer indicated the preferred installation location and desired height for the sign.
 
@@ -147,7 +147,7 @@ After completion, I explained the work performed to the retailer and demonstrate
 def template_deinstallation(reference: str, details: str, extras_block: str) -> str:
     details = details.strip() if details else "No issues reported."
     base = f"""
-WJS Sign Deinstallation Summary – {reference}
+WJS Sign Deinstallation {local} ({reference}) - Summary 
 
 Upon arrival at the site, the retailer indicated the sign to be removed.
 
