@@ -117,9 +117,12 @@ def template_pm(local: str, reference: str, extras_block: str) -> str:
     base = f"""
 PM completed at {local} ({reference}) - Summary
 
+{details}
+
 Burster bins, rollers, and all related peripherals were cleaned.
 Serial numbers for all components were recorded for database entry.
 All hardware components, including the pin pad, were tested and verified as operational.
+
 Keys were returned to the retailer upon completion.
 """.strip()
 
