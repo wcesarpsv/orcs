@@ -1,6 +1,8 @@
 import base64
 import json
 import hashlib
+from io import BytesIO
+from typing import List, Dict
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -39,13 +41,16 @@ def _img_bytes_to_data_url(img_bytes: bytes) -> str:
 def _hash_bytes(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest() if b else ""
 
+def _safe_open_image(img_bytes: bytes):
+    try:
+        return Image.open(BytesIO(img_bytes))
+    except Exception:
+        return None
+
 # =====================
 # AI VISION: EXTRACT PLACE + RDL
 # =====================
-def extract_place_rdl_from_screenshot(img_bytes: bytes) -> dict:
-    """
-    Returns: {"place_name": "...", "rdl": "RDL: 12345"}
-    """
+def extract_place_rdl_from_screenshot(img_bytes: bytes) -> Dict[str, str]:
     if not client or not img_bytes:
         return {"place_name": "", "rdl": "RDL: "}
 
@@ -88,7 +93,9 @@ Rules:
             ],
         )
 
-        data = json.loads(resp.choices[0].message.content or "{}")
+        raw = resp.choices[0].message.content or "{}"
+        data = json.loads(raw)
+
         place = (data.get("place_name") or "").strip()
         rdl_digits = (data.get("rdl") or "").strip()
 
@@ -97,21 +104,15 @@ Rules:
             "rdl": f"RDL: {rdl_digits}" if rdl_digits else "RDL: ",
         }
 
-    except Exception:
+    except Exception as e:
+        # Ajuda a debugar no Streamlit
+        st.error(f"Error extracting Place/RDL: {e}")
         return {"place_name": "", "rdl": "RDL: "}
 
 # =====================
 # AI VISION: EXTRACT WJS LABEL INFO (Item / P/N / S/N)
 # =====================
-def extract_wjs_info_from_label(img_bytes: bytes) -> dict:
-    """
-    Returns:
-    {
-      "item": "Carmanah Wireless Jkpt Sign (30\")",
-      "pn": "400-937",
-      "sn": "EMONJC220032"
-    }
-    """
+def extract_wjs_info_from_label(img_bytes: bytes) -> Dict[str, str]:
     if not client or not img_bytes:
         return {"item": "", "pn": "", "sn": ""}
 
@@ -128,8 +129,8 @@ Return ONLY valid JSON:
 }
 
 Rules:
-- item: product name/description (e.g., "Carmanah Wireless Jkpt Sign (30\")")
-- pn: part number, usually formatted like "400-937"
+- item: product name/description
+- pn: part number, usually like "400-937"
 - sn: serial number / ID (alphanumeric)
 - If a field is not visible, return empty string for it.
 - Do not invent.
@@ -152,14 +153,17 @@ Rules:
             ],
         )
 
-        data = json.loads(resp.choices[0].message.content or "{}")
+        raw = resp.choices[0].message.content or "{}"
+        data = json.loads(raw)
+
         return {
             "item": (data.get("item") or "").strip(),
             "pn": (data.get("pn") or "").strip(),
             "sn": (data.get("sn") or "").strip(),
         }
 
-    except Exception:
+    except Exception as e:
+        st.error(f"Error extracting WJS label: {e}")
         return {"item": "", "pn": "", "sn": ""}
 
 # =====================
@@ -227,7 +231,7 @@ def copy_to_clipboard_button(text: str):
 # =====================
 # TEMPLATES
 # =====================
-def format_extras(itens_extras: list[str]) -> str:
+def format_extras(itens_extras: List[str]) -> str:
     if not itens_extras:
         return ""
     lines = "\n".join([f"- {i}" for i in itens_extras])
@@ -309,23 +313,17 @@ The equipment is being returned to the warehouse.
 # =====================
 # SESSION STATE DEFAULTS
 # =====================
-if "place_name" not in st.session_state:
-    st.session_state.place_name = ""
-if "rdl" not in st.session_state:
-    st.session_state.rdl = "RDL: "
-
-if "wjs_item" not in st.session_state:
-    st.session_state.wjs_item = ""
-if "wjs_pn" not in st.session_state:
-    st.session_state.wjs_pn = ""
-if "wjs_sn" not in st.session_state:
-    st.session_state.wjs_sn = ""
-
-# to avoid re-extracting same image every rerun
-if "last_screenshot_hash" not in st.session_state:
-    st.session_state.last_screenshot_hash = ""
-if "last_label_hash" not in st.session_state:
-    st.session_state.last_label_hash = ""
+for k, v in {
+    "place_name": "",
+    "rdl": "RDL: ",
+    "wjs_item": "",
+    "wjs_pn": "",
+    "wjs_sn": "",
+    "last_screenshot_hash": "",
+    "last_label_hash": "",
+}.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 # =====================
 # AUTO-FILL INPUTS
@@ -337,12 +335,15 @@ if screenshot is not None:
     img_bytes = screenshot.getvalue()
     h = _hash_bytes(img_bytes)
 
-    st.image(Image.open(screenshot), caption="Screenshot preview", use_container_width=True)
+    img = _safe_open_image(img_bytes)
+    if img:
+        st.image(img, caption="Screenshot preview", use_container_width=True)
+    else:
+        st.warning("Could not preview screenshot image.")
 
     if not client:
         st.warning("OPENAI_API_KEY not set in secrets — auto-extract disabled.")
     else:
-        # Auto extract only if new image
         if h and h != st.session_state.last_screenshot_hash:
             with st.spinner("Auto-extracting Place Name + RDL..."):
                 extracted = extract_place_rdl_from_screenshot(img_bytes)
@@ -363,12 +364,15 @@ if label_photo is not None:
     img_bytes = label_photo.getvalue()
     h = _hash_bytes(img_bytes)
 
-    st.image(Image.open(label_photo), caption="Label preview", use_container_width=True)
+    img = _safe_open_image(img_bytes)
+    if img:
+        st.image(img, caption="Label preview", use_container_width=True)
+    else:
+        st.warning("Could not preview label image.")
 
     if not client:
         st.warning("OPENAI_API_KEY not set in secrets — auto-extract disabled.")
     else:
-        # Auto extract only if new image
         if h and h != st.session_state.last_label_hash:
             with st.spinner("Auto-extracting WJS label info..."):
                 wjs = extract_wjs_info_from_label(img_bytes)
@@ -397,7 +401,6 @@ with st.form("report_form"):
     local = st.text_input("📍 Place Name", key="place_name")
     reference = st.text_input("🔢 Reference Number (RDL)", key="rdl")
 
-    # show extracted label fields (editable)
     if report_type in ["INSTALLATION", "DEINSTALLATION"]:
         st.markdown("### 🏷️ WJS Info (auto-filled from label photo — you can edit)")
         st.text_input("Item", key="wjs_item")
@@ -436,7 +439,7 @@ with st.form("report_form"):
 # BUILD REPORT
 # =====================
 if submitted:
-    itens_extras = []
+    itens_extras: List[str] = []
     if cat5: itens_extras.append("CAT5 Network Cable: L63")
     if extension: itens_extras.append("Power Extension: L38A")
     if power_supply: itens_extras.append("Power Supply: L64")
@@ -446,7 +449,6 @@ if submitted:
     if powerbar: itens_extras.append("Power Bar: L38")
     if steel: itens_extras.append("Steel Cable: L48")
     if chain: itens_extras.append("Hanging Chain: L46")
-
 
     if (extras_custom or "").strip():
         itens_extras.extend([i.strip() for i in extras_custom.split("\n") if i.strip()])
@@ -476,9 +478,6 @@ if submitted:
     else:
         texto_final = template_deinstallation(local_clean, reference_clean, details_final, extras_block, wjs_info_block)
 
-    # =====================
-    # OUTPUT
-    # =====================
     st.divider()
     st.subheader("📄 Generated Report")
     st.code(texto_final, language="text")
