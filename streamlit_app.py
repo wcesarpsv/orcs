@@ -413,15 +413,17 @@ with st.form("report_form"):
 
     col1, col2 = st.columns(2)
     with col1:
-        cat5 = st.checkbox("CAT5 Network Cable")
-        extension = st.checkbox("Power Extension")
-        power_supply = st.checkbox("Power Supply")
-        transceiver = st.checkbox("Transceiver")
+        cat5 = st.checkbox("CAT5 Network Cable: L63")
+        extension = st.checkbox("Power Extension: L38A")
+        power_supply = st.checkbox("Power Supply: L64")
+        power_cord = st.checkbox("Power Cord: L1")
+        transceiver = st.checkbox("Transceiver: L61")
 
     with col2:
-        router = st.checkbox("Router")
-        mounting = st.checkbox("Mounting Hardware")
-        adapters = st.checkbox("Adapters")
+        transpower = st.checkbox("Transceiver Power: L38")
+        powerbar = st.checkbox("Power Bar: L38")
+        steel = st.checkbox("Steel Cable: L48")
+        chain = st.checkbox("Hanging Chain: L46")
 
     extras_custom = st.text_area(
         "➕ Other materials (one per line)",
