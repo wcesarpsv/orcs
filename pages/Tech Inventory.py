@@ -14,8 +14,11 @@ DB_PATH = "inventory.db"
 # DB HELPERS
 # =========================
 def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    # More robust SQLite settings for Streamlit + multi-rerun environment
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
     conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
     return conn
 
 def init_db():
@@ -27,7 +30,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
         email TEXT,
-        active INTEGER NOT NULL DEFAULT 1,
+        active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
         created_at TEXT NOT NULL
     );
     """)
@@ -39,6 +42,7 @@ def init_db():
     );
     """)
 
+    # Note: CHECK constraint helps prevent bad status values
     cur.execute("""
     CREATE TABLE IF NOT EXISTS items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +50,7 @@ def init_db():
         asset_tag TEXT,
         item_type_id INTEGER NOT NULL,
         description TEXT,
-        status TEXT NOT NULL, -- AVAILABLE / IN_FIELD / INSTALLED / LOST / DAMAGED
+        status TEXT NOT NULL CHECK(status IN ('AVAILABLE','IN_FIELD','INSTALLED','LOST','DAMAGED')),
         created_at TEXT NOT NULL,
         FOREIGN KEY(item_type_id) REFERENCES item_types(id)
     );
@@ -64,7 +68,7 @@ def init_db():
         location_place_name TEXT,
         rdl TEXT,
         notes TEXT,
-        closed INTEGER NOT NULL DEFAULT 0, -- 0 open, 1 closed
+        closed INTEGER NOT NULL DEFAULT 0 CHECK(closed IN (0,1)),
         created_at TEXT NOT NULL,
         FOREIGN KEY(item_id) REFERENCES items(id),
         FOREIGN KEY(technician_id) REFERENCES technicians(id)
@@ -76,19 +80,43 @@ def init_db():
     ON assignments(closed, technician_id, item_id);
     """)
 
+    # Helpful indexes
+    cur.execute("""
+    CREATE INDEX IF NOT EXISTS idx_assignments_item
+    ON assignments(item_id);
+    """)
+    cur.execute("""
+    CREATE INDEX IF NOT EXISTS idx_assignments_tech_created
+    ON assignments(technician_id, created_at);
+    """)
+    cur.execute("""
+    CREATE INDEX IF NOT EXISTS idx_items_type_status
+    ON items(item_type_id, status);
+    """)
+
     conn.commit()
     conn.close()
 
+@st.cache_data(ttl=5)
 def qdf(query, params=None):
     conn = get_conn()
-    df = pd.read_sql_query(query, conn, params=params or {})
+    df = pd.read_sql_query(query, conn, params=params or ())
     conn.close()
     return df
 
 def exec_sql(query, params=None):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute(query, params or {})
+    cur.execute(query, params or ())
+    conn.commit()
+    rowcount = cur.rowcount
+    conn.close()
+    return rowcount
+
+def insert_sql(query, params=None):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(query, params or ())
     conn.commit()
     last_id = cur.lastrowid
     conn.close()
@@ -226,11 +254,12 @@ with tabs[1]:
                 st.error("Name é obrigatório.")
             else:
                 try:
-                    exec_sql(
+                    insert_sql(
                         "INSERT INTO technicians(name, email, active, created_at) VALUES (?, ?, ?, ?);",
                         (tech_name.strip(), tech_email.strip() or None, int(tech_active), datetime.utcnow().isoformat())
                     )
                     st.success("Technician cadastrado.")
+                    st.cache_data.clear()
                     st.rerun()
                 except sqlite3.IntegrityError:
                     st.error("Já existe um technician com esse nome.")
@@ -260,6 +289,7 @@ with tabs[1]:
                     (new_email.strip() or None, int(new_active), int(row["id"]))
                 )
                 st.success("Atualizado.")
+                st.cache_data.clear()
                 st.rerun()
 
 # =========================
@@ -279,8 +309,9 @@ with tabs[2]:
                 st.error("Type name é obrigatório.")
             else:
                 try:
-                    exec_sql("INSERT INTO item_types(name) VALUES (?);", (type_name.strip(),))
+                    insert_sql("INSERT INTO item_types(name) VALUES (?);", (type_name.strip(),))
                     st.success("Item Type cadastrado.")
+                    st.cache_data.clear()
                     st.rerun()
                 except sqlite3.IntegrityError:
                     st.error("Esse Item Type já existe.")
@@ -300,15 +331,19 @@ with tabs[3]:
         st.warning("Cadastre pelo menos 1 Item Type primeiro.")
         st.stop()
 
-    # Session state do scan
+    # =========================
+    # Session state do scan (IMPORTANT)
+    # =========================
     if "inv_scanner_buffer" not in st.session_state:
         st.session_state.inv_scanner_buffer = None
     if "inv_last_scan" not in st.session_state:
         st.session_state.inv_last_scan = ""
     if "inv_scan_on" not in st.session_state:
         st.session_state.inv_scan_on = False
-    if "inv_manual_sn" not in st.session_state:
-        st.session_state.inv_manual_sn = ""  # Para armazenar o SN digitado/escaneado
+
+    # This is the REAL value source for the SN input widget
+    if "inv_sn_input" not in st.session_state:
+        st.session_state.inv_sn_input = ""
 
     st.markdown("### 📷 Scan do Serial Number (barcode/QR)")
     st.info("Clique em **Start Scan** para abrir a câmera. Aponte para o código e ele será capturado automaticamente.")
@@ -331,75 +366,64 @@ with tabs[3]:
     if st.session_state.inv_scan_on:
         st.markdown("### 📸 Scanner ativo - aponte para o código")
         scanned_sn = qrcode_scanner(key="inv_scan_sn_live")
-        
+
         if scanned_sn and scanned_sn != st.session_state.inv_scanner_buffer:
             st.session_state.inv_scanner_buffer = scanned_sn
-            
+
+            scanned_sn = str(scanned_sn).strip()
+
             if len(scanned_sn) < 3:
                 st.error("Código inválido. Por favor, tente novamente.")
                 st.session_state.inv_scanner_buffer = None
             else:
-                # ATUALIZA O VALOR NO SESSION STATE
-                st.session_state.inv_manual_sn = scanned_sn
+                # ✅ FIX: set directly the widget's session_state key
+                st.session_state.inv_sn_input = scanned_sn
                 st.session_state.inv_last_scan = scanned_sn
+
                 st.session_state.inv_scan_on = False
-                
                 st.success(f"✅ SN capturado: {scanned_sn}")
-                
-                # Mostra preview
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.info(f"**Serial Number:** {scanned_sn}")
-                with col2:
-                    st.code(f"Length: {len(scanned_sn)} characters")
-                
-                import time
-                time.sleep(1.5)
                 st.rerun()
 
     st.markdown("### Ou digite manualmente:")
-    
+
     with st.expander("➕ Add Item", expanded=True):
         c1, c2, c3 = st.columns([1.3, 1.3, 1.6])
         with c1:
             type_pick = st.selectbox("Item Type", types["name"].tolist(), key="inv_item_type")
         with c2:
-            status = st.selectbox("Initial Status", ["AVAILABLE", "IN_FIELD", "INSTALLED", "LOST", "DAMAGED"], key="inv_item_status")
+            status = st.selectbox(
+                "Initial Status",
+                ["AVAILABLE", "IN_FIELD", "INSTALLED", "LOST", "DAMAGED"],
+                key="inv_item_status"
+            )
         with c3:
             asset_tag = st.text_input("Asset Tag (optional)", placeholder="Ex: ORC-001", key="inv_asset_tag")
 
-        # Input do SN - AGORA USA O SESSION STATE
+        # ✅ IMPORTANT: do NOT pass value= when using key.
         serial_number = st.text_input(
-            "Serial Number (SN)", 
+            "Serial Number (SN)",
             key="inv_sn_input",
-            value=st.session_state.inv_manual_sn,  # Pega do session state
-            placeholder="SN será preenchido automaticamente após o scan",
-            on_change=lambda: st.session_state.update(
-                inv_manual_sn=st.session_state.inv_sn_input  # Atualiza quando digitado manualmente
-            )
+            placeholder="SN será preenchido automaticamente após o scan"
         )
-        
+
         desc = st.text_input("Description (optional)", placeholder='Ex: "Carmanah 30", "Printer 4x6"', key="inv_desc")
 
-        # Mostra o último scan para referência
         if st.session_state.inv_last_scan:
             st.info(f"📌 Último SN escaneado: **{st.session_state.inv_last_scan}**")
 
-        # Botão de salvar
         if st.button("💾 Save Item", type="primary", key="btn_save_item", use_container_width=True):
-            # Usa o valor atual do campo
-            sn_to_save = st.session_state.inv_sn_input
-            
-            if not sn_to_save.strip():
+            sn_to_save = (st.session_state.inv_sn_input or "").strip()
+
+            if not sn_to_save:
                 st.error("Serial Number (SN) é obrigatório.")
             else:
                 type_id = int(types[types["name"] == type_pick]["id"].iloc[0])
                 try:
-                    exec_sql("""
+                    insert_sql("""
                         INSERT INTO items(serial_number, asset_tag, item_type_id, description, status, created_at)
                         VALUES (?, ?, ?, ?, ?, ?);
                     """, (
-                        sn_to_save.strip(),
+                        sn_to_save,
                         asset_tag.strip() or None,
                         type_id,
                         desc.strip() or None,
@@ -407,21 +431,19 @@ with tabs[3]:
                         datetime.utcnow().isoformat()
                     ))
                     st.success(f"✅ Item cadastrado com SN: {sn_to_save}")
-                    
-                    # Limpa após salvar
-                    st.session_state.inv_manual_sn = ""
+
+                    # Clear after save
+                    st.session_state.inv_sn_input = ""
                     st.session_state.inv_last_scan = ""
                     st.session_state.inv_scan_on = False
                     st.session_state.inv_scanner_buffer = None
-                    
-                    import time
-                    time.sleep(1.5)
+
+                    st.cache_data.clear()
                     st.rerun()
-                    
+
                 except sqlite3.IntegrityError:
                     st.error(f"❌ SN '{sn_to_save}' já existe no sistema (duplicado).")
 
-    # Instruções de uso
     with st.expander("📱 Dicas para usar o scanner"):
         st.markdown("""
         ### Como usar:
@@ -429,16 +451,15 @@ with tabs[3]:
         2. **Permita o acesso à câmera**
         3. **Aponte para o código** do equipamento
         4. **O SN será preenchido automaticamente** no campo acima
-        
-        ### Problemas comuns:
-        - **Campo não preenche?** Clique em "Stop Scan" e tente novamente
-        - **Câmera não abre?** Verifique as permissões
-        - **Código não é lido?** Aumente a iluminação ou aproxime a câmera
+
+        ### Problemas comuns (celular):
+        - Se abrir a câmera errada (frontal), troque no seletor do navegador ou use Chrome
+        - Se não pedir permissão, confira: configurações do site → permissões → câmera = permitir
+        - Se o app estiver dentro de WebView, às vezes a câmera fica limitada
         """)
 
     st.divider()
-    
-    # Lista de itens cadastrados
+
     st.markdown("### 📋 Últimos Itens Cadastrados")
     df = qdf("""
         SELECT
@@ -454,11 +475,12 @@ with tabs[3]:
         ORDER BY i.created_at DESC
         LIMIT 20;
     """)
-    
+
     if len(df):
+        df = df.copy()
         df["status"] = df["status"].apply(status_badge)
-        df["created_at"] = pd.to_datetime(df["created_at"]).dt.strftime('%d/%m/%Y %H:%M')
-        
+        df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce").dt.strftime('%d/%m/%Y %H:%M')
+
         st.dataframe(
             df[["item_type", "serial_number", "asset_tag", "status", "created_at"]],
             use_container_width=True,
@@ -473,6 +495,7 @@ with tabs[3]:
         )
     else:
         st.info("Nenhum item cadastrado ainda.")
+
 # =========================
 # TAB 4: Assignments
 # =========================
@@ -555,7 +578,7 @@ with tabs[4]:
             tech_id = int(techs[techs["name"] == tech_pick]["id"].iloc[0])
             item_id = int(items_filtered[items_filtered["label"] == item_pick]["id"].iloc[0])
 
-            exec_sql("""
+            insert_sql("""
                 INSERT INTO assignments(
                     item_id, technician_id, request_date, issued_date,
                     location_place_name, rdl, notes, closed, created_at
@@ -574,6 +597,7 @@ with tabs[4]:
 
             exec_sql("UPDATE items SET status='IN_FIELD' WHERE id=?;", (item_id,))
             st.success("Assignment criado. Item agora está IN_FIELD.")
+            st.cache_data.clear()
             st.rerun()
 
     st.divider()
@@ -590,16 +614,17 @@ with tabs[4]:
         pick_id = st.selectbox("Select assignment_id", df["assignment_id"].tolist(), key="assign_pick_id")
         row = df[df["assignment_id"] == pick_id].iloc[0]
 
-        installed_default = date.today()
+        # Defaults
+        installed_default = None
         if isinstance(row["installed_date"], str) and row["installed_date"]:
             try:
                 installed_default = datetime.fromisoformat(row["installed_date"]).date()
             except Exception:
-                pass
+                installed_default = None
 
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            new_installed = st.date_input("Installed Date (optional)", value=installed_default, key="assign_update_installed")
+            mark_installed = st.checkbox("Mark INSTALLED (keep open)", key="assign_mark_installed")
         with c2:
             mark_returned = st.checkbox("Returned (close, item AVAILABLE)", key="assign_mark_returned")
         with c3:
@@ -607,19 +632,49 @@ with tabs[4]:
         with c4:
             mark_damaged = st.checkbox("Mark DAMAGED (close)", key="assign_mark_damaged")
 
-        new_place = st.text_input("Place Name", value="" if pd.isna(row["location_place_name"]) else str(row["location_place_name"]), key="assign_update_place")
-        new_rdl = st.text_input("RDL", value="" if pd.isna(row["rdl"]) else str(row["rdl"]), key="assign_update_rdl")
-        new_notes = st.text_area("Notes", value="" if pd.isna(row["notes"]) else str(row["notes"]), key="assign_update_notes")
+        if mark_installed:
+            new_installed = st.date_input(
+                "Installed Date",
+                value=(installed_default or date.today()),
+                key="assign_update_installed"
+            )
+        else:
+            new_installed = None
+            st.caption("Installed Date ficará vazio (NULL) se você não marcar INSTALLED.")
+
+        new_place = st.text_input(
+            "Place Name",
+            value="" if pd.isna(row["location_place_name"]) else str(row["location_place_name"]),
+            key="assign_update_place"
+        )
+        new_rdl = st.text_input(
+            "RDL",
+            value="" if pd.isna(row["rdl"]) else str(row["rdl"]),
+            key="assign_update_rdl"
+        )
+        new_notes = st.text_area(
+            "Notes",
+            value="" if pd.isna(row["notes"]) else str(row["notes"]),
+            key="assign_update_notes"
+        )
 
         if st.button("Save Update", key="btn_assign_save_update"):
+            # Update assignment fields (installed_date only if mark_installed)
             exec_sql("""
                 UPDATE assignments
                 SET installed_date=?, location_place_name=?, rdl=?, notes=?
                 WHERE id=?;
-            """, (to_iso(new_installed), new_place.strip() or None, new_rdl.strip() or None, new_notes.strip() or None, int(pick_id)))
+            """, (
+                to_iso(new_installed) if mark_installed else None,
+                new_place.strip() or None,
+                new_rdl.strip() or None,
+                new_notes.strip() or None,
+                int(pick_id)
+            ))
 
             item_id = int(qdf("SELECT item_id FROM assignments WHERE id=?;", (int(pick_id),))["item_id"].iloc[0])
 
+            # Close / status logic (explicit only)
             if mark_lost:
                 exec_sql("UPDATE items SET status='LOST' WHERE id=?;", (item_id,))
                 exec_sql("UPDATE assignments SET closed=1, returned_date=? WHERE id=?;", (to_iso(date.today()), int(pick_id)))
@@ -632,10 +687,13 @@ with tabs[4]:
                 exec_sql("UPDATE items SET status='AVAILABLE' WHERE id=?;", (item_id,))
                 exec_sql("UPDATE assignments SET closed=1, returned_date=? WHERE id=?;", (to_iso(date.today()), int(pick_id)))
                 st.success("Assignment fechado. Item voltou para AVAILABLE.")
-            else:
+            elif mark_installed:
                 exec_sql("UPDATE items SET status='INSTALLED' WHERE id=?;", (item_id,))
                 st.success("Atualizado. Item marcado como INSTALLED (assignment continua aberto).")
+            else:
+                st.success("Atualizado. (Somente campos do assignment foram editados; status do item mantido.)")
 
+            st.cache_data.clear()
             st.rerun()
 
 # =========================
