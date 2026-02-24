@@ -14,7 +14,7 @@ DB_PATH = "inventory.db"
 # DB HELPERS
 # =========================
 def get_conn():
-    # More robust SQLite settings for Streamlit + multi-rerun environment
+    # More robust SQLite settings for Streamlit + reruns
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.execute("PRAGMA journal_mode = WAL;")
@@ -42,7 +42,6 @@ def init_db():
     );
     """)
 
-    # Note: CHECK constraint helps prevent bad status values
     cur.execute("""
     CREATE TABLE IF NOT EXISTS items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,18 +80,9 @@ def init_db():
     """)
 
     # Helpful indexes
-    cur.execute("""
-    CREATE INDEX IF NOT EXISTS idx_assignments_item
-    ON assignments(item_id);
-    """)
-    cur.execute("""
-    CREATE INDEX IF NOT EXISTS idx_assignments_tech_created
-    ON assignments(technician_id, created_at);
-    """)
-    cur.execute("""
-    CREATE INDEX IF NOT EXISTS idx_items_type_status
-    ON items(item_type_id, status);
-    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_assignments_item ON assignments(item_id);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_assignments_tech_created ON assignments(technician_id, created_at);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_items_type_status ON items(item_type_id, status);")
 
     conn.commit()
     conn.close()
@@ -331,9 +321,7 @@ with tabs[3]:
         st.warning("Cadastre pelo menos 1 Item Type primeiro.")
         st.stop()
 
-    # =========================
-    # Session state do scan (IMPORTANT)
-    # =========================
+    # Session state
     if "inv_scanner_buffer" not in st.session_state:
         st.session_state.inv_scanner_buffer = None
     if "inv_last_scan" not in st.session_state:
@@ -341,9 +329,24 @@ with tabs[3]:
     if "inv_scan_on" not in st.session_state:
         st.session_state.inv_scan_on = False
 
-    # This is the REAL value source for the SN input widget
-    if "inv_sn_input" not in st.session_state:
-        st.session_state.inv_sn_input = ""
+    # Buffer + version key
+    if "inv_sn_value" not in st.session_state:
+        st.session_state.inv_sn_value = ""
+    if "inv_sn_keyver" not in st.session_state:
+        st.session_state.inv_sn_keyver = 0
+
+    # ✅ Flag for clearing AFTER save (done before widget instantiation next rerun)
+    if "pending_clear_sn" not in st.session_state:
+        st.session_state.pending_clear_sn = False
+
+    # If requested, clear BEFORE creating the widget
+    if st.session_state.pending_clear_sn:
+        st.session_state.inv_sn_value = ""
+        st.session_state.inv_last_scan = ""
+        st.session_state.inv_scanner_buffer = None
+        st.session_state.inv_scan_on = False
+        st.session_state.inv_sn_keyver += 1
+        st.session_state.pending_clear_sn = False
 
     st.markdown("### 📷 Scan do Serial Number (barcode/QR)")
     st.info("Clique em **Start Scan** para abrir a câmera. Aponte para o código e ele será capturado automaticamente.")
@@ -369,17 +372,15 @@ with tabs[3]:
 
         if scanned_sn and scanned_sn != st.session_state.inv_scanner_buffer:
             st.session_state.inv_scanner_buffer = scanned_sn
-
             scanned_sn = str(scanned_sn).strip()
 
             if len(scanned_sn) < 3:
                 st.error("Código inválido. Por favor, tente novamente.")
                 st.session_state.inv_scanner_buffer = None
             else:
-                # ✅ FIX: set directly the widget's session_state key
-                st.session_state.inv_sn_input = scanned_sn
+                st.session_state.inv_sn_value = scanned_sn
                 st.session_state.inv_last_scan = scanned_sn
-
+                st.session_state.inv_sn_keyver += 1
                 st.session_state.inv_scan_on = False
                 st.success(f"✅ SN capturado: {scanned_sn}")
                 st.rerun()
@@ -399,10 +400,12 @@ with tabs[3]:
         with c3:
             asset_tag = st.text_input("Asset Tag (optional)", placeholder="Ex: ORC-001", key="inv_asset_tag")
 
-        # ✅ IMPORTANT: do NOT pass value= when using key.
+        # ✅ Dynamic key prevents Streamlit state mutation errors
+        sn_key = f"inv_sn_input_{st.session_state.inv_sn_keyver}"
         serial_number = st.text_input(
             "Serial Number (SN)",
-            key="inv_sn_input",
+            key=sn_key,
+            value=st.session_state.inv_sn_value,
             placeholder="SN será preenchido automaticamente após o scan"
         )
 
@@ -412,7 +415,7 @@ with tabs[3]:
             st.info(f"📌 Último SN escaneado: **{st.session_state.inv_last_scan}**")
 
         if st.button("💾 Save Item", type="primary", key="btn_save_item", use_container_width=True):
-            sn_to_save = (st.session_state.inv_sn_input or "").strip()
+            sn_to_save = (st.session_state.get(sn_key) or "").strip()
 
             if not sn_to_save:
                 st.error("Serial Number (SN) é obrigatório.")
@@ -430,14 +433,11 @@ with tabs[3]:
                         status,
                         datetime.utcnow().isoformat()
                     ))
+
                     st.success(f"✅ Item cadastrado com SN: {sn_to_save}")
 
-                    # Clear after save
-                    st.session_state.inv_sn_input = ""
-                    st.session_state.inv_last_scan = ""
-                    st.session_state.inv_scan_on = False
-                    st.session_state.inv_scanner_buffer = None
-
+                    # ✅ request clear for next rerun (before widget is created)
+                    st.session_state.pending_clear_sn = True
                     st.cache_data.clear()
                     st.rerun()
 
@@ -455,7 +455,7 @@ with tabs[3]:
         ### Problemas comuns (celular):
         - Se abrir a câmera errada (frontal), troque no seletor do navegador ou use Chrome
         - Se não pedir permissão, confira: configurações do site → permissões → câmera = permitir
-        - Se o app estiver dentro de WebView, às vezes a câmera fica limitada
+        - HTTPS é obrigatório para câmera em muitos navegadores
         """)
 
     st.divider()
@@ -614,7 +614,6 @@ with tabs[4]:
         pick_id = st.selectbox("Select assignment_id", df["assignment_id"].tolist(), key="assign_pick_id")
         row = df[df["assignment_id"] == pick_id].iloc[0]
 
-        # Defaults
         installed_default = None
         if isinstance(row["installed_date"], str) and row["installed_date"]:
             try:
@@ -659,7 +658,6 @@ with tabs[4]:
         )
 
         if st.button("Save Update", key="btn_assign_save_update"):
-            # Update assignment fields (installed_date only if mark_installed)
             exec_sql("""
                 UPDATE assignments
                 SET installed_date=?, location_place_name=?, rdl=?, notes=?
@@ -674,7 +672,6 @@ with tabs[4]:
 
             item_id = int(qdf("SELECT item_id FROM assignments WHERE id=?;", (int(pick_id),))["item_id"].iloc[0])
 
-            # Close / status logic (explicit only)
             if mark_lost:
                 exec_sql("UPDATE items SET status='LOST' WHERE id=?;", (item_id,))
                 exec_sql("UPDATE assignments SET closed=1, returned_date=? WHERE id=?;", (to_iso(date.today()), int(pick_id)))
