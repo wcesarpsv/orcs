@@ -313,23 +313,38 @@ with tabs[3]:
     with c1:
         if st.button("▶️ Start Scan", key="btn_inv_start_scan"):
             st.session_state.inv_scan_on = True
+            st.session_state.inv_last_scan = ""  # Limpa scan anterior ao iniciar novo
+            st.rerun()  # Força rerun para garantir que o scanner apareça
     with c2:
         if st.button("⏹ Stop Scan", key="btn_inv_stop_scan"):
             st.session_state.inv_scan_on = False
+            st.rerun()  # Força rerun para garantir que o scanner desapareça
     with c3:
         st.write("")
 
+    # Área do scanner
     scanned_sn = None
     if st.session_state.inv_scan_on:
-        scanned_sn = qrcode_scanner(key="inv_scan_sn_live")
+        # Usando um container para isolar o scanner
+        scanner_container = st.container()
+        with scanner_container:
+            st.markdown("### 📸 Scanner ativo - aponte para o código")
+            scanned_sn = qrcode_scanner(key="inv_scan_sn_live")
+            
+            if scanned_sn:
+                # Quando um código é lido
+                if scanned_sn != st.session_state.inv_last_scan:
+                    st.session_state.inv_last_scan = scanned_sn
+                    st.session_state.inv_scan_on = False
+                    st.success(f"✅ SN capturado: {scanned_sn}")
+                    st.rerun()  # Força rerun para fechar o scanner e mostrar o SN
 
-        if scanned_sn and scanned_sn != st.session_state.inv_last_scan:
-            st.session_state.inv_last_scan = scanned_sn
-            st.session_state.inv_scan_on = False
-            st.success(f"✅ SN capturado: {scanned_sn}")
-
-    default_sn = st.session_state.inv_last_scan
-
+    # Campo para digitar manualmente (caso o scanner não funcione)
+    st.markdown("### Ou digite manualmente:")
+    
+    # Determina o valor padrão para o campo de SN
+    default_sn = st.session_state.inv_last_scan if st.session_state.inv_last_scan else ""
+    
     with st.expander("➕ Add Item", expanded=True):
         c1, c2, c3 = st.columns([1.3, 1.3, 1.6])
         with c1:
@@ -339,7 +354,14 @@ with tabs[3]:
         with c3:
             asset_tag = st.text_input("Asset Tag (optional)", placeholder="Ex: ORC-001", key="inv_asset_tag")
 
-        serial_number = st.text_input("Serial Number (SN)", value=default_sn or "", key="inv_sn_input")
+        # Input do SN com o valor escaneado
+        serial_number = st.text_input(
+            "Serial Number (SN)", 
+            value=default_sn, 
+            key="inv_sn_input",
+            placeholder="SN será preenchido automaticamente após o scan"
+        )
+        
         desc = st.text_input("Description (optional)", placeholder='Ex: "Carmanah 30", "Printer 4x6"', key="inv_desc")
 
         if st.button("Save Item", type="primary", key="btn_save_item"):
@@ -360,10 +382,22 @@ with tabs[3]:
                         datetime.utcnow().isoformat()
                     ))
                     st.success("Item cadastrado com SN único.")
+                    # Limpa o scan após salvar com sucesso
                     st.session_state.inv_last_scan = ""
+                    st.session_state.inv_scan_on = False
                     st.rerun()
                 except sqlite3.IntegrityError:
                     st.error("SN já existe no sistema (duplicado).")
+
+    # Mostrar instruções de uso do scanner
+    with st.expander("📱 Dicas para usar o scanner no celular"):
+        st.markdown("""
+        - **Permissão da câmera**: O navegador vai pedir permissão para usar a câmera. Clique em "Permitir".
+        - **Câmera traseira**: O scanner geralmente usa a câmera traseira por padrão.
+        - **Boa iluminação**: Certifique-se de que o código está bem iluminado.
+        - **Foco**: Aproxime a câmera até o código ficar nítido.
+        - **Se não funcionar**: Use a digitação manual como fallback.
+        """)
 
     st.divider()
     df = qdf("""
