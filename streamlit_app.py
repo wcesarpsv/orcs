@@ -420,7 +420,7 @@ with st.form("report_form"):
         transceiver = st.checkbox("Transceiver: L61")
 
     with col2:
-        transpower = st.checkbox("Transceiver Power: L38")
+        transpower = st.checkbox("Transceiver Power: L62")
         powerbar = st.checkbox("Power Bar: L38")
         steel = st.checkbox("Steel Cable: L48")
         chain = st.checkbox("Hanging Chain: L46")
@@ -437,13 +437,16 @@ with st.form("report_form"):
 # =====================
 if submitted:
     itens_extras = []
-    if cat5: itens_extras.append("CAT5 network cable")
-    if extension: itens_extras.append("Power extension")
-    if power_supply: itens_extras.append("Power supply")
-    if transceiver: itens_extras.append("Transceiver")
-    if router: itens_extras.append("Router")
-    if mounting: itens_extras.append("Mounting hardware")
-    if adapters: itens_extras.append("Adapters")
+    if cat5: itens_extras.append("CAT5 Network Cable: L63")
+    if extension: itens_extras.append("Power Extension: L38A")
+    if power_supply: itens_extras.append("Power Supply: L64")
+    if power_cord: itens_extras.append("Power Cord: L1")
+    if transceiver: itens_extras.append("Transceiver: L61")
+    if transpower: itens_extras.append("Transceiver Power: L62")
+    if powerbar: itens_extras.append("Power Bar: L38")
+    if steel: itens_extras.append("Steel Cable: L48")
+    if chain: itens_extras.append("Hanging Chain: L46")
+
 
     if (extras_custom or "").strip():
         itens_extras.extend([i.strip() for i in extras_custom.split("\n") if i.strip()])
