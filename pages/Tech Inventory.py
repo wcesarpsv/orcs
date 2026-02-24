@@ -272,7 +272,8 @@ with tabs[1]:
                 "Active",
                 [1, 0],
                 index=0 if int(row["active"]) == 1 else 1,
-                format_func=lambda x: "Yes" if x == 1 else "No"
+                format_func=lambda x: "Yes" if x == 1 else "No",
+                key=f"tech_active_update_{int(row['id'])}"
             )
             if st.button("Update Technician"):
                 exec_sql(
