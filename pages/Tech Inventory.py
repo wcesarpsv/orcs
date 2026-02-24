@@ -300,46 +300,66 @@ with tabs[3]:
         st.warning("Cadastre pelo menos 1 Item Type primeiro.")
         st.stop()
 
-    # Session state do scan (mais estável no mobile)
-    if "inv_scan_on" not in st.session_state:
-        st.session_state.inv_scan_on = False
+    # Session state do scan (igual ao PM scan)
+    if "inv_scanner_buffer" not in st.session_state:
+        st.session_state.inv_scanner_buffer = None
     if "inv_last_scan" not in st.session_state:
         st.session_state.inv_last_scan = ""
+    if "inv_scan_on" not in st.session_state:
+        st.session_state.inv_scan_on = False
 
     st.markdown("### 📷 Scan do Serial Number (barcode/QR)")
-    st.info("Clique em **Start Scan** para abrir a câmera. Depois de capturar, ele fecha automaticamente.")
+    st.info("Clique em **Start Scan** para abrir a câmera. Aponte para o código e ele será capturado automaticamente.")
 
     c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
         if st.button("▶️ Start Scan", key="btn_inv_start_scan"):
             st.session_state.inv_scan_on = True
-            st.session_state.inv_last_scan = ""  # Limpa scan anterior ao iniciar novo
-            st.rerun()  # Força rerun para garantir que o scanner apareça
+            st.session_state.inv_scanner_buffer = None  # Limpa buffer ao iniciar
+            st.rerun()
     with c2:
         if st.button("⏹ Stop Scan", key="btn_inv_stop_scan"):
             st.session_state.inv_scan_on = False
-            st.rerun()  # Força rerun para garantir que o scanner desapareça
+            st.session_state.inv_scanner_buffer = None
+            st.rerun()
     with c3:
         st.write("")
 
-    # Área do scanner
+    # Scanner (igual ao PM scan)
     scanned_sn = None
     if st.session_state.inv_scan_on:
-        # Usando um container para isolar o scanner
-        scanner_container = st.container()
-        with scanner_container:
-            st.markdown("### 📸 Scanner ativo - aponte para o código")
-            scanned_sn = qrcode_scanner(key="inv_scan_sn_live")
+        st.markdown("### 📸 Scanner ativo - aponte para o código")
+        scanned_sn = qrcode_scanner(key="inv_scan_sn_live")
+        
+        # Lógica igual ao PM scan
+        if scanned_sn and scanned_sn != st.session_state.inv_scanner_buffer:
+            st.session_state.inv_scanner_buffer = scanned_sn
             
-            if scanned_sn:
-                # Quando um código é lido
-                if scanned_sn != st.session_state.inv_last_scan:
-                    st.session_state.inv_last_scan = scanned_sn
-                    st.session_state.inv_scan_on = False
-                    st.success(f"✅ SN capturado: {scanned_sn}")
-                    st.rerun()  # Força rerun para fechar o scanner e mostrar o SN
+            # Validação básica
+            if len(scanned_sn) < 3:
+                st.error("Código inválido. Por favor, tente novamente.")
+                st.session_state.inv_scanner_buffer = None
+            else:
+                # Atualiza o último scan
+                st.session_state.inv_last_scan = scanned_sn
+                st.session_state.inv_scan_on = False
+                
+                # Feedback visual
+                st.success(f"✅ SN capturado: {scanned_sn}")
+                
+                # Mostra preview do código capturado
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.info(f"**Serial Number:** {scanned_sn}")
+                with col2:
+                    st.code(f"Length: {len(scanned_sn)} characters")
+                
+                # Auto-advance com delay
+                import time
+                time.sleep(1.5)
+                st.rerun()
 
-    # Campo para digitar manualmente (caso o scanner não funcione)
+    # Campo para digitação manual (fallback)
     st.markdown("### Ou digite manualmente:")
     
     # Determina o valor padrão para o campo de SN
@@ -364,42 +384,73 @@ with tabs[3]:
         
         desc = st.text_input("Description (optional)", placeholder='Ex: "Carmanah 30", "Printer 4x6"', key="inv_desc")
 
-        if st.button("Save Item", type="primary", key="btn_save_item"):
-            if not serial_number.strip():
-                st.error("Serial Number (SN) é obrigatório.")
-            else:
-                type_id = int(types[types["name"] == type_pick]["id"].iloc[0])
-                try:
-                    exec_sql("""
-                        INSERT INTO items(serial_number, asset_tag, item_type_id, description, status, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?);
-                    """, (
-                        serial_number.strip(),
-                        asset_tag.strip() or None,
-                        type_id,
-                        desc.strip() or None,
-                        status,
-                        datetime.utcnow().isoformat()
-                    ))
-                    st.success("Item cadastrado com SN único.")
-                    # Limpa o scan após salvar com sucesso
-                    st.session_state.inv_last_scan = ""
-                    st.session_state.inv_scan_on = False
-                    st.rerun()
-                except sqlite3.IntegrityError:
-                    st.error("SN já existe no sistema (duplicado).")
+        # Botão de salvar
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if st.button("💾 Save Item", type="primary", key="btn_save_item"):
+                if not serial_number.strip():
+                    st.error("Serial Number (SN) é obrigatório.")
+                else:
+                    type_id = int(types[types["name"] == type_pick]["id"].iloc[0])
+                    try:
+                        exec_sql("""
+                            INSERT INTO items(serial_number, asset_tag, item_type_id, description, status, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?);
+                        """, (
+                            serial_number.strip(),
+                            asset_tag.strip() or None,
+                            type_id,
+                            desc.strip() or None,
+                            status,
+                            datetime.utcnow().isoformat()
+                        ))
+                        st.success("✅ Item cadastrado com SN único.")
+                        
+                        # Limpa o scan após salvar com sucesso
+                        st.session_state.inv_last_scan = ""
+                        st.session_state.inv_scan_on = False
+                        st.session_state.inv_scanner_buffer = None
+                        
+                        # Pequeno delay para mostrar mensagem de sucesso
+                        import time
+                        time.sleep(1.5)
+                        st.rerun()
+                        
+                    except sqlite3.IntegrityError:
+                        st.error("❌ SN já existe no sistema (duplicado).")
+        
+        with col2:
+            if default_sn:
+                st.info(f"Último SN escaneado: **{default_sn}**")
 
-    # Mostrar instruções de uso do scanner
+    # Instruções de uso
     with st.expander("📱 Dicas para usar o scanner no celular"):
         st.markdown("""
-        - **Permissão da câmera**: O navegador vai pedir permissão para usar a câmera. Clique em "Permitir".
-        - **Câmera traseira**: O scanner geralmente usa a câmera traseira por padrão.
-        - **Boa iluminação**: Certifique-se de que o código está bem iluminado.
-        - **Foco**: Aproxime a câmera até o código ficar nítido.
-        - **Se não funcionar**: Use a digitação manual como fallback.
+        ### Como usar o scanner:
+        
+        1. **Clique em "Start Scan"** para ativar a câmera
+        2. **Permita o acesso à câmera** quando o navegador solicitar
+        3. **Aponte para o código de barras/QR** do equipamento
+        4. **Aguarde a leitura automática** - o scanner captura sozinho
+        5. **O SN aparecerá no campo** e você poderá salvar o item
+        
+        ### Solução de problemas:
+        
+        - **Câmera não abre?** Verifique as permissões do navegador
+        - **Não consegue ler?** Aumente a iluminação ou aproxime a câmera
+        - **Código muito pequeno?** Aproxime mais a câmera
+        - **Scanner não funciona?** Use a digitação manual como fallback
+        
+        ### Códigos válidos:
+        - QR Codes
+        - Códigos de barras (EAN, UPC, Code 128, etc)
+        - Mínimo de 3 caracteres
         """)
 
     st.divider()
+    
+    # Lista de itens cadastrados
+    st.markdown("### 📋 Itens Cadastrados")
     df = qdf("""
         SELECT
             i.id,
@@ -411,11 +462,33 @@ with tabs[3]:
             i.created_at
         FROM items i
         JOIN item_types it ON it.id = i.item_type_id
-        ORDER BY it.name, i.serial_number;
+        ORDER BY i.created_at DESC
+        LIMIT 50;
     """)
+    
     if len(df):
         df["status"] = df["status"].apply(status_badge)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+        df["created_at"] = pd.to_datetime(df["created_at"]).dt.strftime('%d/%m/%Y %H:%M')
+        
+        # Mostra em formato de tabela
+        st.dataframe(
+            df[["item_type", "serial_number", "asset_tag", "status", "created_at"]],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "item_type": "Tipo",
+                "serial_number": "Serial Number",
+                "asset_tag": "Asset Tag",
+                "status": "Status",
+                "created_at": "Cadastrado em"
+            }
+        )
+        
+        # Total de itens
+        total_items = qdf("SELECT COUNT(*) as total FROM items;").iloc[0,0]
+        st.caption(f"Total de itens no sistema: **{total_items}**")
+    else:
+        st.info("Nenhum item cadastrado ainda.")
 
 # =========================
 # TAB 4: Assignments
