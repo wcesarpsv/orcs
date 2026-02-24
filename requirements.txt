@@ -12,3 +12,4 @@ openpyxl
 python-barcode
 pillow
 python-docx
+pyzbar
