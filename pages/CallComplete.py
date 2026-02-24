@@ -178,7 +178,7 @@ with st.form("report_form"):
         st.warning("AI is ON, but OPENAI_API_KEY is not set in secrets. I will use your text as-is.")
 
     local = st.text_input("📍 Place Name", placeholder="Example: Gateway Newstand 434")
-    reference = st.text_input("🔢 Reference Number (RDL / RL)", placeholder="Example: RDL 43741 / RL 601962")
+    reference = st.text_input("🔢 Reference Number (RDL)", value="RDL: ")
 
     descricao = st.text_area(
         "📝 Details (facts only — what happened / issues / time / actions taken)",
