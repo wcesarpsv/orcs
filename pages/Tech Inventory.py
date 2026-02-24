@@ -2,24 +2,19 @@ import streamlit as st
 import sqlite3
 from datetime import datetime, date
 import pandas as pd
-from PIL import Image
+from streamlit_qrcode_scanner import qrcode_scanner
 
-# =========================
-# CONFIG
-# =========================
 st.set_page_config(page_title="Field Inventory Tracker", layout="wide")
 
 DB_PATH = "inventory.db"
 
-
-# =========================
-# DB HELPERS
-# =========================
+# -----------------------------
+# DB Helpers
+# -----------------------------
 def get_conn():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
-
 
 def init_db():
     conn = get_conn()
@@ -45,11 +40,11 @@ def init_db():
     cur.execute("""
     CREATE TABLE IF NOT EXISTS items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        serial_number TEXT NOT NULL UNIQUE, -- SN lido do barcode/QR
-        asset_tag TEXT,                    -- opcional (se você tiver etiqueta interna)
+        serial_number TEXT NOT NULL UNIQUE,
+        asset_tag TEXT,
         item_type_id INTEGER NOT NULL,
         description TEXT,
-        status TEXT NOT NULL,              -- AVAILABLE / IN_FIELD / INSTALLED / LOST / DAMAGED
+        status TEXT NOT NULL, -- AVAILABLE / IN_FIELD / INSTALLED / LOST / DAMAGED
         created_at TEXT NOT NULL,
         FOREIGN KEY(item_type_id) REFERENCES item_types(id)
     );
@@ -67,7 +62,7 @@ def init_db():
         location_place_name TEXT,
         rdl TEXT,
         notes TEXT,
-        closed INTEGER NOT NULL DEFAULT 0, -- 0 open, 1 closed
+        closed INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         FOREIGN KEY(item_id) REFERENCES items(id),
         FOREIGN KEY(technician_id) REFERENCES technicians(id)
@@ -82,13 +77,11 @@ def init_db():
     conn.commit()
     conn.close()
 
-
 def qdf(query, params=None):
     conn = get_conn()
     df = pd.read_sql_query(query, conn, params=params or {})
     conn.close()
     return df
-
 
 def exec_sql(query, params=None):
     conn = get_conn()
@@ -99,7 +92,6 @@ def exec_sql(query, params=None):
     conn.close()
     return last_id
 
-
 def to_iso(d):
     if d is None:
         return None
@@ -107,26 +99,8 @@ def to_iso(d):
         return d.isoformat()
     return str(d)
 
-
 def today_str():
     return date.today().isoformat()
-
-
-# =========================
-# BARCODE/QR DECODER
-# =========================
-def decode_barcode_qr(pil_img: Image.Image) -> str | None:
-    """
-    Lê barcode/QR a partir de uma imagem.
-    Requer: pyzbar + libzbar0 (no Streamlit Cloud via packages.txt)
-    """
-    from pyzbar.pyzbar import decode
-    decoded = decode(pil_img.convert("RGB"))
-    if not decoded:
-        return None
-    value = decoded[0].data.decode("utf-8", errors="ignore").strip()
-    return value or None
-
 
 def status_badge(status: str) -> str:
     m = {
@@ -138,14 +112,13 @@ def status_badge(status: str) -> str:
     }
     return m.get(status, status)
 
-
-# =========================
-# APP START
-# =========================
+# -----------------------------
+# App
+# -----------------------------
 init_db()
 
 st.title("🧰 Field Inventory Tracker (SST / Carmanah / Tools)")
-st.caption("Cadastro de técnicos + itens via camera (barcode/QR) + movimentações (request → issued → installed → returned).")
+st.caption("Cadastro de técnicos + itens via scanner (câmera traseira) + movimentações.")
 
 tabs = st.tabs([
     "📌 Friday Check",
@@ -157,7 +130,7 @@ tabs = st.tabs([
 ])
 
 # -----------------------------
-# TAB: Friday Check
+# TAB 0: Friday Check
 # -----------------------------
 with tabs[0]:
     st.subheader("📌 Friday Check (itens em posse / em andamento)")
@@ -185,17 +158,14 @@ with tabs[0]:
         ORDER BY t.name, it.name;
     """)
 
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        selected_tech = st.selectbox(
-            "Filtrar por técnico (opcional)",
-            options=["(All)"] + (techs["name"].tolist() if len(techs) else [])
-        )
-    with col2:
-        st.write("Baixe o CSV e cole/anexe no e-mail de sexta.")
+    selected_tech = st.selectbox(
+        "Filtrar por técnico (opcional)",
+        options=["(All)"] + (techs["name"].tolist() if len(techs) else []),
+        key="friday_filter_tech"
+    )
 
     if len(items_in_field) == 0:
-        st.info("Nenhum assignment aberto. (Nenhum item em posse registrado.)")
+        st.info("Nenhum assignment aberto.")
     else:
         df = items_in_field.copy()
         if selected_tech != "(All)":
@@ -229,7 +199,7 @@ with tabs[0]:
         )
 
 # -----------------------------
-# TAB: Technicians
+# TAB 1: Technicians
 # -----------------------------
 with tabs[1]:
     st.subheader("👤 Technicians")
@@ -237,13 +207,13 @@ with tabs[1]:
     with st.expander("➕ Add Technician", expanded=True):
         c1, c2, c3 = st.columns([1.2, 1.5, 0.8])
         with c1:
-            tech_name = st.text_input("Name", placeholder="Ex: Wagner Veras")
+            tech_name = st.text_input("Name", placeholder="Ex: Wagner Veras", key="tech_add_name")
         with c2:
-            tech_email = st.text_input("Email (optional)", placeholder="ex: name@company.com")
+            tech_email = st.text_input("Email (optional)", placeholder="ex: name@company.com", key="tech_add_email")
         with c3:
-            tech_active = st.selectbox("Active", [1, 0], format_func=lambda x: "Yes" if x == 1 else "No")
+            tech_active = st.selectbox("Active", [1, 0], format_func=lambda x: "Yes" if x == 1 else "No", key="tech_add_active")
 
-        if st.button("Save Technician", type="primary"):
+        if st.button("Save Technician", type="primary", key="btn_save_tech"):
             if not tech_name.strip():
                 st.error("Name é obrigatório.")
             else:
@@ -265,9 +235,10 @@ with tabs[1]:
         if len(df) == 0:
             st.info("Cadastre um technician primeiro.")
         else:
-            tech_pick = st.selectbox("Select Technician", df["name"].tolist())
+            tech_pick = st.selectbox("Select Technician", df["name"].tolist(), key="tech_pick_update")
             row = df[df["name"] == tech_pick].iloc[0]
-            new_email = st.text_input("Email", value=row["email"] if row["email"] else "")
+
+            new_email = st.text_input("Email", value=row["email"] if row["email"] else "", key="tech_update_email")
             new_active = st.selectbox(
                 "Active",
                 [1, 0],
@@ -275,23 +246,21 @@ with tabs[1]:
                 format_func=lambda x: "Yes" if x == 1 else "No",
                 key=f"tech_active_update_{int(row['id'])}"
             )
-            if st.button("Update Technician"):
-                exec_sql(
-                    "UPDATE technicians SET email=?, active=? WHERE id=?;",
-                    (new_email.strip() or None, int(new_active), int(row["id"]))
-                )
+            if st.button("Update Technician", key="btn_update_tech"):
+                exec_sql("UPDATE technicians SET email=?, active=? WHERE id=?;",
+                         (new_email.strip() or None, int(new_active), int(row["id"])))
                 st.success("Atualizado.")
                 st.rerun()
 
 # -----------------------------
-# TAB: Item Types
+# TAB 2: Item Types
 # -----------------------------
 with tabs[2]:
-    st.subheader("📦 Item Types (categorias)")
+    st.subheader("📦 Item Types")
 
     with st.expander("➕ Add Item Type", expanded=True):
-        type_name = st.text_input("Type Name", placeholder='Ex: Carmanah Sign 30" / Printer / Booster / LCD')
-        if st.button("Save Item Type", type="primary"):
+        type_name = st.text_input("Type Name", placeholder='Ex: Carmanah Sign 30" / Printer / Booster', key="type_add_name")
+        if st.button("Save Item Type", type="primary", key="btn_save_type"):
             if not type_name.strip():
                 st.error("Type name é obrigatório.")
             else:
@@ -307,45 +276,36 @@ with tabs[2]:
     st.dataframe(df, use_container_width=True, hide_index=True)
 
 # -----------------------------
-# TAB: Items (Scan SN)
+# TAB 3: Items (Scan SN)
 # -----------------------------
 with tabs[3]:
-    st.subheader("🧾 Items (Scan SN via camera)")
+    st.subheader("🧾 Items (Scan SN com câmera traseira)")
 
     types = qdf("SELECT id, name FROM item_types ORDER BY name;")
     if len(types) == 0:
         st.warning("Cadastre pelo menos 1 Item Type primeiro.")
     else:
         with st.expander("➕ Add Item (scan barcode/QR)", expanded=True):
-            st.markdown("#### 📷 Scan Serial Number (Barcode/QR)")
+            st.markdown("### 📷 Scan do Serial Number (barcode/QR)")
+            st.info("Use o scanner (igual seu PM SST). Ele normalmente abre na câmera traseira.")
 
-            photo = st.camera_input("Aponte para o barcode/QR do SN e tire a foto")
-            scanned_sn = None
+            scanned_sn = qrcode_scanner(key="inv_scan_sn")
 
-            if photo:
-                pil_img = Image.open(photo)
-                try:
-                    scanned_sn = decode_barcode_qr(pil_img)
-                    if scanned_sn:
-                        st.success(f"✅ Capturado: {scanned_sn}")
-                    else:
-                        st.warning("Não detectei barcode/QR. Tente aproximar e focar melhor.")
-                except Exception as e:
-                    st.error("Erro ao ler barcode/QR. Verifique se libzbar0 está instalado (packages.txt).")
-                    st.caption(str(e))
+            if scanned_sn:
+                st.success(f"✅ SN capturado: {scanned_sn}")
 
             c1, c2, c3 = st.columns([1.3, 1.3, 1.6])
             with c1:
-                type_pick = st.selectbox("Item Type", types["name"].tolist())
+                type_pick = st.selectbox("Item Type", types["name"].tolist(), key="inv_item_type")
             with c2:
-                status = st.selectbox("Initial Status", ["AVAILABLE", "IN_FIELD", "INSTALLED", "LOST", "DAMAGED"])
+                status = st.selectbox("Initial Status", ["AVAILABLE", "IN_FIELD", "INSTALLED", "LOST", "DAMAGED"], key="inv_item_status")
             with c3:
-                asset_tag = st.text_input("Asset Tag (optional)", placeholder="Ex: ORC-001")
+                asset_tag = st.text_input("Asset Tag (optional)", placeholder="Ex: ORC-001", key="inv_asset_tag")
 
-            serial_number = st.text_input("Serial Number (SN)", value=scanned_sn or "", placeholder="Será preenchido pelo scan")
-            desc = st.text_input("Description (optional)", placeholder='Ex: "Small Carmanah", "Printer 4x6"')
+            serial_number = st.text_input("Serial Number (SN)", value=scanned_sn or "", key="inv_sn_input")
+            desc = st.text_input("Description (optional)", placeholder='Ex: "Small Carmanah", "Printer 4x6"', key="inv_desc")
 
-            if st.button("Save Item", type="primary"):
+            if st.button("Save Item", type="primary", key="btn_save_item"):
                 if not serial_number.strip():
                     st.error("Serial Number (SN) é obrigatório.")
                 else:
@@ -386,10 +346,10 @@ with tabs[3]:
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 # -----------------------------
-# TAB: Assignments
+# TAB 4: Assignments
 # -----------------------------
 with tabs[4]:
-    st.subheader("🔁 Assignments (Request → Issued → Installed → Returned)")
+    st.subheader("🔁 Assignments")
 
     techs = qdf("SELECT id, name FROM technicians WHERE active=1 ORDER BY name;")
     items = qdf("""
@@ -428,24 +388,21 @@ with tabs[4]:
         ORDER BY a.created_at DESC;
     """)
 
-    st.markdown("### ➕ Create new Assignment (entregar/registrar item com técnico)")
+    st.markdown("### ➕ Create new Assignment")
     if len(techs) == 0 or len(items) == 0:
         st.warning("Cadastre technicians e items primeiro.")
     else:
         c1, c2, c3 = st.columns([1.2, 2.2, 1.1])
         with c1:
-            tech_pick = st.selectbox("Technician", techs["name"].tolist())
+            tech_pick = st.selectbox("Technician", techs["name"].tolist(), key="assign_tech_pick")
         with c2:
-            filter_status = st.selectbox("Mostrar itens", ["AVAILABLE (recommended)", "ALL"])
+            filter_status = st.selectbox("Mostrar itens", ["AVAILABLE (recommended)", "ALL"], key="assign_filter_items")
             items_filtered = items.copy()
             if filter_status.startswith("AVAILABLE"):
                 items_filtered = items_filtered[items_filtered["status"] == "AVAILABLE"]
 
             def item_label(r):
-                extra = f" (SN: {r['serial_number']})"
-                tag = f" | {r['asset_tag']}" if (r["asset_tag"] or "").strip() else ""
-                desc = f" - {r['description']}" if (r["description"] or "").strip() else ""
-                return f"{r['item_type']}{extra}{tag}{desc}"
+                return f"{r['item_type']} (SN: {r['serial_number']})" + (f" | {r['asset_tag']}" if (r["asset_tag"] or "").strip() else "") + (f" - {r['description']}" if (r["description"] or "").strip() else "")
 
             if len(items_filtered) == 0:
                 st.error("Sem itens AVAILABLE. Ajuste status ou feche assignments antigos.")
@@ -453,21 +410,20 @@ with tabs[4]:
             else:
                 items_filtered = items_filtered.copy()
                 items_filtered["label"] = items_filtered.apply(item_label, axis=1)
-                item_pick = st.selectbox("Item", items_filtered["label"].tolist())
+                item_pick = st.selectbox("Item", items_filtered["label"].tolist(), key="assign_item_pick")
 
         with c3:
-            request_date = st.date_input("Request Date", value=date.today())
+            request_date = st.date_input("Request Date", value=date.today(), key="assign_req_date")
 
-        issued_date = st.date_input("Issued Date", value=date.today())
-        location_place_name = st.text_input("Place Name (optional)", placeholder="Ex: Shoppers - Markham")
-        rdl = st.text_input("RDL (optional)", placeholder="Ex: RDL-1234")
-        notes = st.text_area("Notes (optional)", placeholder="Ex: Requested 3 signs + printer; install next week.")
+        issued_date = st.date_input("Issued Date", value=date.today(), key="assign_issued_date")
+        location_place_name = st.text_input("Place Name (optional)", placeholder="Ex: Shoppers - Markham", key="assign_place")
+        rdl = st.text_input("RDL (optional)", placeholder="Ex: RDL-1234", key="assign_rdl")
+        notes = st.text_area("Notes (optional)", placeholder="Ex: Requested 3 signs + printer; install next week.", key="assign_notes")
 
-        if st.button("Create Assignment", type="primary", disabled=(item_pick is None)):
+        if st.button("Create Assignment", type="primary", disabled=(item_pick is None), key="btn_create_assignment"):
             tech_id = int(techs[techs["name"] == tech_pick]["id"].iloc[0])
             item_id = int(items_filtered[items_filtered["label"] == item_pick]["id"].iloc[0])
 
-            # create assignment
             exec_sql("""
                 INSERT INTO assignments(
                     item_id, technician_id, request_date, issued_date,
@@ -485,7 +441,6 @@ with tabs[4]:
                 datetime.utcnow().isoformat()
             ))
 
-            # update item status
             exec_sql("UPDATE items SET status='IN_FIELD' WHERE id=?;", (item_id,))
             st.success("Assignment criado. Item agora está IN_FIELD.")
             st.rerun()
@@ -500,65 +455,11 @@ with tabs[4]:
         df["status"] = df["status"].apply(status_badge)
         st.dataframe(df, use_container_width=True, hide_index=True)
 
-        st.markdown("### ✏️ Update / Close Assignment")
-        pick_id = st.selectbox("Select assignment_id", df["assignment_id"].tolist())
-        row = df[df["assignment_id"] == pick_id].iloc[0]
-
-        # Dates
-        installed_default = date.today()
-        if isinstance(row["installed_date"], str) and row["installed_date"]:
-            try:
-                installed_default = datetime.fromisoformat(row["installed_date"]).date()
-            except Exception:
-                pass
-
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            new_installed = st.date_input("Installed Date (optional)", value=installed_default)
-        with c2:
-            mark_returned = st.checkbox("Returned (close, item AVAILABLE)")
-        with c3:
-            mark_lost = st.checkbox("Mark LOST (close)")
-        with c4:
-            mark_damaged = st.checkbox("Mark DAMAGED (close)")
-
-        new_place = st.text_input("Place Name", value="" if pd.isna(row["location_place_name"]) else str(row["location_place_name"]))
-        new_rdl = st.text_input("RDL", value="" if pd.isna(row["rdl"]) else str(row["rdl"]))
-        new_notes = st.text_area("Notes", value="" if pd.isna(row["notes"]) else str(row["notes"]))
-
-        if st.button("Save Update"):
-            # Update assignment fields
-            exec_sql("""
-                UPDATE assignments
-                SET installed_date=?, location_place_name=?, rdl=?, notes=?
-                WHERE id=?;
-            """, (to_iso(new_installed), new_place.strip() or None, new_rdl.strip() or None, new_notes.strip() or None, int(pick_id)))
-
-            item_id = int(qdf("SELECT item_id FROM assignments WHERE id=?;", (int(pick_id),))["item_id"].iloc[0])
-
-            if mark_lost:
-                exec_sql("UPDATE items SET status='LOST' WHERE id=?;", (item_id,))
-                exec_sql("UPDATE assignments SET closed=1, returned_date=? WHERE id=?;", (to_iso(date.today()), int(pick_id)))
-                st.success("Item marcado como LOST e assignment fechado.")
-            elif mark_damaged:
-                exec_sql("UPDATE items SET status='DAMAGED' WHERE id=?;", (item_id,))
-                exec_sql("UPDATE assignments SET closed=1, returned_date=? WHERE id=?;", (to_iso(date.today()), int(pick_id)))
-                st.success("Item marcado como DAMAGED e assignment fechado.")
-            elif mark_returned:
-                exec_sql("UPDATE items SET status='AVAILABLE' WHERE id=?;", (item_id,))
-                exec_sql("UPDATE assignments SET closed=1, returned_date=? WHERE id=?;", (to_iso(date.today()), int(pick_id)))
-                st.success("Assignment fechado. Item voltou para AVAILABLE.")
-            else:
-                exec_sql("UPDATE items SET status='INSTALLED' WHERE id=?;", (item_id,))
-                st.success("Atualizado. Item marcado como INSTALLED (assignment continua aberto).")
-
-            st.rerun()
-
 # -----------------------------
-# TAB: Export
+# TAB 5: Export
 # -----------------------------
 with tabs[5]:
-    st.subheader("📤 Export / Reports")
+    st.subheader("📤 Export")
 
     df_items = qdf("""
         SELECT
@@ -601,14 +502,16 @@ with tabs[5]:
             "⬇️ Export Items CSV",
             data=df_items.to_csv(index=False).encode("utf-8"),
             file_name=f"items_{today_str()}.csv",
-            mime="text/csv"
+            mime="text/csv",
+            key="dl_items"
         )
     with c2:
         st.download_button(
             "⬇️ Export Assignments CSV",
             data=df_assign.to_csv(index=False).encode("utf-8"),
             file_name=f"assignments_{today_str()}.csv",
-            mime="text/csv"
+            mime="text/csv",
+            key="dl_assign"
         )
 
     df_show = df_assign.copy()
