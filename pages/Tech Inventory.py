@@ -132,6 +132,14 @@ def status_badge(status: str) -> str:
     }
     return m.get(status, status)
 
+def normalize_scan_text(x):
+    if x is None:
+        return ""
+    s = str(x).strip()
+    # tira espaços duplicados
+    s = " ".join(s.split())
+    return s
+
 # =========================
 # INIT
 # =========================
@@ -145,6 +153,7 @@ tabs = st.tabs([
     "👤 Technicians",
     "📦 Item Types",
     "🧾 Items (Scan SN)",
+    "🚚 Quick Issue (Scan → Assign)",   # ✅ NOVA ABA
     "🔁 Assignments",
     "📤 Export"
 ])
@@ -335,11 +344,10 @@ with tabs[3]:
     if "inv_sn_keyver" not in st.session_state:
         st.session_state.inv_sn_keyver = 0
 
-    # ✅ Flag for clearing AFTER save (done before widget instantiation next rerun)
+    # ✅ Flag for clearing AFTER save
     if "pending_clear_sn" not in st.session_state:
         st.session_state.pending_clear_sn = False
 
-    # If requested, clear BEFORE creating the widget
     if st.session_state.pending_clear_sn:
         st.session_state.inv_sn_value = ""
         st.session_state.inv_last_scan = ""
@@ -365,14 +373,13 @@ with tabs[3]:
     with c3:
         st.write("")
 
-    # Scanner
     if st.session_state.inv_scan_on:
         st.markdown("### 📸 Scanner ativo - aponte para o código")
         scanned_sn = qrcode_scanner(key="inv_scan_sn_live")
 
         if scanned_sn and scanned_sn != st.session_state.inv_scanner_buffer:
             st.session_state.inv_scanner_buffer = scanned_sn
-            scanned_sn = str(scanned_sn).strip()
+            scanned_sn = normalize_scan_text(scanned_sn)
 
             if len(scanned_sn) < 3:
                 st.error("Código inválido. Por favor, tente novamente.")
@@ -400,7 +407,6 @@ with tabs[3]:
         with c3:
             asset_tag = st.text_input("Asset Tag (optional)", placeholder="Ex: ORC-001", key="inv_asset_tag")
 
-        # ✅ Dynamic key prevents Streamlit state mutation errors
         sn_key = f"inv_sn_input_{st.session_state.inv_sn_keyver}"
         serial_number = st.text_input(
             "Serial Number (SN)",
@@ -415,7 +421,7 @@ with tabs[3]:
             st.info(f"📌 Último SN escaneado: **{st.session_state.inv_last_scan}**")
 
         if st.button("💾 Save Item", type="primary", key="btn_save_item", use_container_width=True):
-            sn_to_save = (st.session_state.get(sn_key) or "").strip()
+            sn_to_save = normalize_scan_text(st.session_state.get(sn_key))
 
             if not sn_to_save:
                 st.error("Serial Number (SN) é obrigatório.")
@@ -435,28 +441,12 @@ with tabs[3]:
                     ))
 
                     st.success(f"✅ Item cadastrado com SN: {sn_to_save}")
-
-                    # ✅ request clear for next rerun (before widget is created)
                     st.session_state.pending_clear_sn = True
                     st.cache_data.clear()
                     st.rerun()
 
                 except sqlite3.IntegrityError:
                     st.error(f"❌ SN '{sn_to_save}' já existe no sistema (duplicado).")
-
-    with st.expander("📱 Dicas para usar o scanner"):
-        st.markdown("""
-        ### Como usar:
-        1. **Clique em "Start Scan"** para ativar a câmera
-        2. **Permita o acesso à câmera**
-        3. **Aponte para o código** do equipamento
-        4. **O SN será preenchido automaticamente** no campo acima
-
-        ### Problemas comuns (celular):
-        - Se abrir a câmera errada (frontal), troque no seletor do navegador ou use Chrome
-        - Se não pedir permissão, confira: configurações do site → permissões → câmera = permitir
-        - HTTPS é obrigatório para câmera em muitos navegadores
-        """)
 
     st.divider()
 
@@ -497,9 +487,225 @@ with tabs[3]:
         st.info("Nenhum item cadastrado ainda.")
 
 # =========================
-# TAB 4: Assignments
+# TAB 4: Quick Issue (Scan → Assign)  ✅ NOVA ABA
 # =========================
 with tabs[4]:
+    st.subheader("🚚 Quick Issue (Scan → Assign)")
+    st.caption("Aqui você cadastra (se precisar) e já entrega o item para um técnico em um único fluxo.")
+
+    techs = qdf("SELECT id, name FROM technicians WHERE active=1 ORDER BY name;")
+    types = qdf("SELECT id, name FROM item_types ORDER BY name;")
+
+    if len(techs) == 0:
+        st.warning("Cadastre pelo menos 1 Technician primeiro.")
+        st.stop()
+    if len(types) == 0:
+        st.warning("Cadastre pelo menos 1 Item Type primeiro.")
+        st.stop()
+
+    # Estado do scanner desta aba (separado da aba Items)
+    if "qi_scan_on" not in st.session_state:
+        st.session_state.qi_scan_on = False
+    if "qi_scanner_buffer" not in st.session_state:
+        st.session_state.qi_scanner_buffer = None
+    if "qi_last_scan" not in st.session_state:
+        st.session_state.qi_last_scan = ""
+
+    if "qi_sn_value" not in st.session_state:
+        st.session_state.qi_sn_value = ""
+    if "qi_sn_keyver" not in st.session_state:
+        st.session_state.qi_sn_keyver = 0
+
+    if "qi_pending_clear" not in st.session_state:
+        st.session_state.qi_pending_clear = False
+
+    if st.session_state.qi_pending_clear:
+        st.session_state.qi_sn_value = ""
+        st.session_state.qi_last_scan = ""
+        st.session_state.qi_scanner_buffer = None
+        st.session_state.qi_scan_on = False
+        st.session_state.qi_sn_keyver += 1
+        st.session_state.qi_pending_clear = False
+
+    c0, c1, c2 = st.columns([1.3, 1.3, 2.4])
+    with c0:
+        tech_pick = st.selectbox("Technician", techs["name"].tolist(), key="qi_tech_pick")
+    with c1:
+        type_pick = st.selectbox("Item Type", types["name"].tolist(), key="qi_type_pick")
+    with c2:
+        st.info("Dica: se o item já existir como **AVAILABLE**, ele será anexado ao técnico. Se estiver IN_FIELD/INSTALLED/LOST/DAMAGED, eu bloqueio para evitar bagunça.")
+
+    st.markdown("### 📷 Scan do Serial Number (SN)")
+    cA, cB, cC = st.columns([1, 1, 2])
+    with cA:
+        if st.button("▶️ Start Scan", key="btn_qi_start_scan"):
+            st.session_state.qi_scan_on = True
+            st.session_state.qi_scanner_buffer = None
+            st.rerun()
+    with cB:
+        if st.button("⏹ Stop Scan", key="btn_qi_stop_scan"):
+            st.session_state.qi_scan_on = False
+            st.session_state.qi_scanner_buffer = None
+            st.rerun()
+    with cC:
+        st.write("")
+
+    if st.session_state.qi_scan_on:
+        st.markdown("### 📸 Scanner ativo - aponte para o código")
+        scanned = qrcode_scanner(key="qi_scan_sn_live")
+
+        if scanned and scanned != st.session_state.qi_scanner_buffer:
+            st.session_state.qi_scanner_buffer = scanned
+            scanned = normalize_scan_text(scanned)
+
+            if len(scanned) < 3:
+                st.error("Código inválido. Por favor, tente novamente.")
+                st.session_state.qi_scanner_buffer = None
+            else:
+                st.session_state.qi_sn_value = scanned
+                st.session_state.qi_last_scan = scanned
+                st.session_state.qi_sn_keyver += 1
+                st.session_state.qi_scan_on = False
+                st.success(f"✅ SN capturado: {scanned}")
+                st.rerun()
+
+    sn_key = f"qi_sn_input_{st.session_state.qi_sn_keyver}"
+    serial_number = st.text_input(
+        "Serial Number (SN)",
+        key=sn_key,
+        value=st.session_state.qi_sn_value,
+        placeholder="SN será preenchido automaticamente após o scan"
+    )
+
+    cX, cY = st.columns([1.2, 2.0])
+    with cX:
+        asset_tag = st.text_input("Asset Tag (optional)", placeholder="Ex: ORC-001", key="qi_asset_tag")
+    with cY:
+        desc = st.text_input("Description (optional)", placeholder='Ex: "Printer 4x6", "Booster"', key="qi_desc")
+
+    cP, cQ, cR = st.columns([1.2, 1.2, 2.0])
+    with cP:
+        request_date = st.date_input("Request Date", value=date.today(), key="qi_req_date")
+    with cQ:
+        issued_date = st.date_input("Issued Date", value=date.today(), key="qi_issued_date")
+    with cR:
+        location_place_name = st.text_input("Place Name (optional)", placeholder="Ex: Shoppers - Markham", key="qi_place")
+
+    cM, cN = st.columns([1.2, 2.0])
+    with cM:
+        rdl = st.text_input("RDL (optional)", placeholder="Ex: RDL-1234", key="qi_rdl")
+    with cN:
+        notes = st.text_area("Notes (optional)", placeholder="Ex: entreguei para instalação semana que vem", key="qi_notes", height=80)
+
+    if st.session_state.qi_last_scan:
+        st.info(f"📌 Último SN escaneado: **{st.session_state.qi_last_scan}**")
+
+    if st.button("✅ Save & Assign to Technician", type="primary", key="btn_qi_save_assign", use_container_width=True):
+        sn_to_use = normalize_scan_text(st.session_state.get(sn_key))
+
+        if not sn_to_use:
+            st.error("Serial Number (SN) é obrigatório.")
+            st.stop()
+
+        tech_id = int(techs[techs["name"] == tech_pick]["id"].iloc[0])
+        type_id = int(types[types["name"] == type_pick]["id"].iloc[0])
+
+        # 1) Verifica se item já existe
+        existing = qdf("""
+            SELECT id, status FROM items WHERE serial_number = ? LIMIT 1;
+        """, (sn_to_use,))
+
+        if len(existing):
+            item_id = int(existing["id"].iloc[0])
+            item_status = str(existing["status"].iloc[0])
+
+            if item_status != "AVAILABLE":
+                st.error(f"Esse item já existe com status **{item_status}**. Para anexar, ele precisa estar **AVAILABLE**.")
+                st.stop()
+        else:
+            # 2) Cria item novo como AVAILABLE (depois vira IN_FIELD)
+            try:
+                item_id = insert_sql("""
+                    INSERT INTO items(serial_number, asset_tag, item_type_id, description, status, created_at)
+                    VALUES (?, ?, ?, ?, 'AVAILABLE', ?);
+                """, (
+                    sn_to_use,
+                    asset_tag.strip() or None,
+                    type_id,
+                    desc.strip() or None,
+                    datetime.utcnow().isoformat()
+                ))
+            except sqlite3.IntegrityError:
+                # corrida rara, reconsulta
+                existing2 = qdf("SELECT id, status FROM items WHERE serial_number = ? LIMIT 1;", (sn_to_use,))
+                if len(existing2) == 0:
+                    st.error("Erro ao criar item (integrity). Tente novamente.")
+                    st.stop()
+                item_id = int(existing2["id"].iloc[0])
+                if str(existing2["status"].iloc[0]) != "AVAILABLE":
+                    st.error(f"Item existe mas status não é AVAILABLE. Status atual: {existing2['status'].iloc[0]}")
+                    st.stop()
+
+        # 3) Cria assignment
+        insert_sql("""
+            INSERT INTO assignments(
+                item_id, technician_id, request_date, issued_date,
+                location_place_name, rdl, notes, closed, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?);
+        """, (
+            item_id,
+            tech_id,
+            to_iso(request_date),
+            to_iso(issued_date),
+            location_place_name.strip() or None,
+            rdl.strip() or None,
+            notes.strip() or None,
+            datetime.utcnow().isoformat()
+        ))
+
+        # 4) Atualiza status do item -> IN_FIELD
+        exec_sql("UPDATE items SET status='IN_FIELD' WHERE id=?;", (item_id,))
+
+        st.success(f"✅ Item **{sn_to_use}** anexado ao técnico **{tech_pick}** (status IN_FIELD).")
+        st.session_state.qi_pending_clear = True
+        st.cache_data.clear()
+        st.rerun()
+
+    st.divider()
+    st.markdown("### 📍 Últimos Assignments criados (recentes)")
+    last_assign = qdf("""
+        SELECT
+            a.id AS assignment_id,
+            t.name AS technician,
+            it.name AS item_type,
+            i.serial_number,
+            i.asset_tag,
+            i.status,
+            a.issued_date,
+            a.location_place_name,
+            a.rdl,
+            a.notes,
+            a.created_at
+        FROM assignments a
+        JOIN technicians t ON t.id = a.technician_id
+        JOIN items i ON i.id = a.item_id
+        JOIN item_types it ON it.id = i.item_type_id
+        ORDER BY a.created_at DESC
+        LIMIT 20;
+    """)
+    if len(last_assign):
+        df = last_assign.copy()
+        df["status"] = df["status"].apply(status_badge)
+        df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce").dt.strftime('%d/%m/%Y %H:%M')
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.info("Ainda não há assignments recentes.")
+
+# =========================
+# TAB 5: Assignments
+# =========================
+with tabs[5]:
     st.subheader("🔁 Assignments (Request → Issued → Installed → Returned)")
 
     techs = qdf("SELECT id, name FROM technicians WHERE active=1 ORDER BY name;")
@@ -694,9 +900,9 @@ with tabs[4]:
             st.rerun()
 
 # =========================
-# TAB 5: Export
+# TAB 6: Export
 # =========================
-with tabs[5]:
+with tabs[6]:
     st.subheader("📤 Export / Reports")
 
     df_items = qdf("""
