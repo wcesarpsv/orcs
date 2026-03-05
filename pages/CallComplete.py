@@ -1,4 +1,3 @@
-```python
 import base64
 import json
 import hashlib
@@ -749,4 +748,3 @@ if submitted:
                 file_name="sst_bf_replacement_report.txt",
                 mime="text/plain",
             )
-```
