@@ -2,7 +2,7 @@ import base64
 import json
 import hashlib
 from io import BytesIO
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -12,9 +12,9 @@ from PIL import Image
 # =====================
 # CONFIG
 # =====================
-st.set_page_config(page_title="WJS Report Generator", layout="centered")
-st.title("🛠️ WJS Service Report Generator")
-st.caption("Fixed layout + AI polish (details only) + Auto-extract (Place/RDL + WJS Info) + BF (WJS/SST)")
+st.set_page_config(page_title="WJS Report Generator (Advanced)", layout="centered")
+st.title("🛠️ WJS Service Report Generator (Advanced)")
+st.caption("Auto-extract (Place/RDL + WJS Label) • BF presets • SST replacement email+report • fast copy/download")
 st.divider()
 
 # =====================
@@ -46,6 +46,19 @@ def _safe_open_image(img_bytes: bytes):
         return Image.open(BytesIO(img_bytes))
     except Exception:
         return None
+
+def _strip(s: Optional[str]) -> str:
+    return (s or "").strip()
+
+def _ensure_rdl_prefix(reference: str) -> str:
+    ref = _strip(reference)
+    if not ref:
+        return "RDL: "
+    # if user already typed "RDL:" keep
+    if ref.lower().startswith("rdl"):
+        return ref
+    # if user typed just digits, prefix it
+    return f"RDL: {ref}"
 
 # =====================
 # AI VISION: EXTRACT PLACE + RDL
@@ -96,8 +109,8 @@ Rules:
         raw = resp.choices[0].message.content or "{}"
         data = json.loads(raw)
 
-        place = (data.get("place_name") or "").strip()
-        rdl_digits = (data.get("rdl") or "").strip()
+        place = _strip(data.get("place_name"))
+        rdl_digits = _strip(data.get("rdl"))
 
         return {
             "place_name": place,
@@ -156,9 +169,9 @@ Rules:
         data = json.loads(raw)
 
         return {
-            "item": (data.get("item") or "").strip(),
-            "pn": (data.get("pn") or "").strip(),
-            "sn": (data.get("sn") or "").strip(),
+            "item": _strip(data.get("item")),
+            "pn": _strip(data.get("pn")),
+            "sn": _strip(data.get("sn")),
         }
 
     except Exception as e:
@@ -169,17 +182,16 @@ Rules:
 # AI: POLISH ONLY DETAILS
 # =====================
 def polish_details_ai(raw_details: str) -> str:
-    if not client:
-        return (raw_details or "").strip()
-
-    raw_details = (raw_details or "").strip()
+    raw_details = _strip(raw_details)
     if not raw_details:
         return ""
+    if not client:
+        return raw_details
 
     try:
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
-            temperature=0,  # safer: less chance of "inventing"
+            temperature=0,  # safest
             messages=[
                 {
                     "role": "system",
@@ -196,9 +208,9 @@ def polish_details_ai(raw_details: str) -> str:
         return raw_details
 
 # =====================
-# COPY BUTTON
+# COPY BUTTON (unique per key)
 # =====================
-def copy_to_clipboard_button(text: str, button_label: str = "📋 Copy to clipboard"):
+def copy_to_clipboard_button(text: str, key: str, button_label: str = "📋 Copy"):
     safe_text = (
         (text or "")
         .replace("&", "&amp;")
@@ -206,16 +218,20 @@ def copy_to_clipboard_button(text: str, button_label: str = "📋 Copy to clipbo
         .replace(">", "&gt;")
     )
 
+    uid = hashlib.md5(key.encode("utf-8")).hexdigest()[:10]
+    ta_id = f"clipboard-text-{uid}"
+    fn_id = f"copyText{uid}"
+
     components.html(
         f"""
-        <textarea id="clipboard-text" style="position:absolute; left:-9999px; top:-9999px;">{safe_text}</textarea>
-        <button onclick="copyText()"
+        <textarea id="{ta_id}" style="position:absolute; left:-9999px; top:-9999px;">{safe_text}</textarea>
+        <button onclick="{fn_id}()"
             style="background-color:#2563eb;color:white;border:none;padding:10px 16px;border-radius:6px;font-size:14px;cursor:pointer;">
             {button_label}
         </button>
         <script>
-        function copyText() {{
-            const el = document.getElementById("clipboard-text");
+        function {fn_id}() {{
+            const el = document.getElementById("{ta_id}");
             navigator.clipboard.writeText(el.value).then(() => {{
                 alert("Copied!");
             }}).catch(() => {{
@@ -228,7 +244,7 @@ def copy_to_clipboard_button(text: str, button_label: str = "📋 Copy to clipbo
     )
 
 # =====================
-# TEMPLATES / FORMATTERS
+# FORMATTERS / TEMPLATES
 # =====================
 def format_extras(itens_extras: List[str]) -> str:
     if not itens_extras:
@@ -237,9 +253,9 @@ def format_extras(itens_extras: List[str]) -> str:
     return f"Additional materials used:\n{lines}"
 
 def format_wjs_info(item: str, pn: str, sn: str) -> str:
-    item = (item or "").strip()
-    pn = (pn or "").strip()
-    sn = (sn or "").strip()
+    item = _strip(item)
+    pn = _strip(pn)
+    sn = _strip(sn)
     if not (item or pn or sn):
         return ""
     lines = ["WJS Info:"]
@@ -309,6 +325,30 @@ The equipment is being returned to the warehouse.
         base += "\n\n" + extras_block
     return base
 
+# ---------------------
+# WJS BF: problem presets
+# ---------------------
+WJS_BF_PROBLEMS = {
+    "— Select a common issue —": "",
+    "Power supply failure (ceiling PSU)": (
+        "After performing the necessary troubleshooting procedures, it was identified that the power supply located in the ceiling was malfunctioning.\n\n"
+        "The faulty power supply was replaced, along with a cable extension, to restore proper operation of the Carmanah unit."
+    ),
+    "Transceiver / signal issue": (
+        "After performing the necessary troubleshooting procedures, intermittent communication was observed between the Carmanah unit and its transceiver.\n\n"
+        "Connections were reseated and verified, and the transceiver was replaced to restore stable operation."
+    ),
+    "Network / Ethernet issue": (
+        "After performing the necessary troubleshooting procedures, a network connectivity issue was identified.\n\n"
+        "The network cable and connections were inspected and corrected, and connectivity was restored. The unit was tested and confirmed operational."
+    ),
+    "Mounting / alignment / physical adjustment": (
+        "After inspection, adjustments were required to ensure proper mounting and alignment.\n\n"
+        "The unit was repositioned and secured, and functionality was verified after the adjustment."
+    ),
+    "Other (use Details below)": "",
+}
+
 def template_wjs_bf(local: str, reference: str, details: str, extras_block: str) -> str:
     details = details.strip() if details else "No issues reported."
     base = f"""
@@ -327,18 +367,30 @@ Retailer was informed that the unit is now operating normally.
         base += "\n\n" + extras_block
     return base
 
-# ---------- SST BF (TEXTO 1: REQUEST REF) ----------
+# ---------------------
+# SST BF: replacements + 2 texts
+# ---------------------
+SST_COMPONENT_CHOICES = [
+    "Slip Reader",
+    "Printer",
+    "Scanner",
+    "Pin Pad",
+    "LCD",
+    "Router",
+    "Transceiver",
+    "Burster",
+    "Power Supply",
+    "Other (type manually)",
+]
+
 def format_sst_bf_request_email(reference: str, items: List[Dict[str, str]]) -> str:
-    """
-    items: [{"component":"Slip Reader", "old_sn":"...", "new_sn":"..."}, ...]
-    """
-    reference = (reference or "").strip()
+    reference = _strip(reference)
 
     clean = []
     for it in items or []:
-        comp = (it.get("component") or "").strip()
-        old_sn = (it.get("old_sn") or "").strip()
-        new_sn = (it.get("new_sn") or "").strip()
+        comp = _strip(it.get("component"))
+        old_sn = _strip(it.get("old_sn"))
+        new_sn = _strip(it.get("new_sn"))
         if comp and (old_sn or new_sn):
             clean.append({"component": comp, "old_sn": old_sn, "new_sn": new_sn})
 
@@ -368,13 +420,12 @@ Following the SN of old and new components:
 
     return email
 
-# ---------- SST BF (TEXTO 2: REPLACEMENT REPORT) ----------
 def format_replaced_components_block(items: List[Dict[str, str]]) -> str:
     lines = []
     for it in items or []:
-        comp = (it.get("component") or "").strip()
-        old_sn = (it.get("old_sn") or "").strip()
-        new_sn = (it.get("new_sn") or "").strip()
+        comp = _strip(it.get("component"))
+        old_sn = _strip(it.get("old_sn"))
+        new_sn = _strip(it.get("new_sn"))
         if not comp:
             continue
 
@@ -392,9 +443,9 @@ def format_replaced_components_block(items: List[Dict[str, str]]) -> str:
 def template_sst_bf_replacement_report(items: List[Dict[str, str]]) -> str:
     clean = []
     for it in items or []:
-        comp = (it.get("component") or "").strip()
-        old_sn = (it.get("old_sn") or "").strip()
-        new_sn = (it.get("new_sn") or "").strip()
+        comp = _strip(it.get("component"))
+        old_sn = _strip(it.get("old_sn"))
+        new_sn = _strip(it.get("new_sn"))
         if comp and (old_sn or new_sn):
             clean.append({"component": comp, "old_sn": old_sn, "new_sn": new_sn})
 
@@ -431,7 +482,7 @@ The updated and previous component lists are attached for your review.
 # =====================
 # SESSION STATE DEFAULTS
 # =====================
-for k, v in {
+defaults = {
     "place_name": "",
     "rdl": "RDL: ",
     "wjs_item": "",
@@ -440,15 +491,20 @@ for k, v in {
     "last_screenshot_hash": "",
     "last_label_hash": "",
     "report_type_preview": "PM",
-}.items():
+    "wjs_bf_problem": "— Select a common issue —",
+    "use_ai": True,
+}
+for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
 if "sst_replacements" not in st.session_state:
-    st.session_state.sst_replacements = [{"component": "Slip Reader", "old_sn": "", "new_sn": ""}]
+    st.session_state.sst_replacements = [
+        {"choice": "Slip Reader", "component": "Slip Reader", "old_sn": "", "new_sn": ""}
+    ]
 
 # =====================
-# AUTO-FILL INPUTS
+# AUTO-FILL INPUTS (images)
 # =====================
 st.subheader("📸 Auto-fill (Place Name + RDL) via Screenshot")
 screenshot = st.file_uploader("Upload screenshot (PNG/JPG)", type=["png", "jpg", "jpeg"], key="uploader_screenshot")
@@ -479,7 +535,7 @@ if screenshot is not None:
 st.divider()
 
 st.subheader("🏷️ Auto-fill (WJS Info) via Serial/Label Photo")
-st.caption("Use this for INSTALLATION / DEINSTALLATION to add Item + P/N + Serial to the report.")
+st.caption("Use this for INSTALLATION / DEINSTALLATION (optional).")
 label_photo = st.file_uploader("Upload label/serial photo (PNG/JPG)", type=["png", "jpg", "jpeg"], key="uploader_label")
 
 if label_photo is not None:
@@ -507,25 +563,7 @@ if label_photo is not None:
 st.divider()
 
 # =====================
-# SST BF DYNAMIC CONTROLS (outside form, to avoid submit conflicts)
-# =====================
-if st.session_state.get("report_type_preview", "PM") == "SST BF":
-    st.subheader("🔁 SST BF - Components to Replace")
-    st.caption("Add/remove components. Fill component name + old/new SN for each replacement.")
-
-    colx, coly = st.columns(2)
-    with colx:
-        if st.button("➕ Add component", key="btn_add_comp"):
-            st.session_state.sst_replacements.append({"component": "", "old_sn": "", "new_sn": ""})
-    with coly:
-        if st.button("➖ Remove last", key="btn_remove_comp"):
-            if len(st.session_state.sst_replacements) > 1:
-                st.session_state.sst_replacements.pop()
-
-    st.divider()
-
-# =====================
-# UI FORM
+# MAIN FORM (single submit)
 # =====================
 with st.form("report_form"):
     report_type = st.selectbox(
@@ -536,8 +574,9 @@ with st.form("report_form"):
 
     use_ai = st.checkbox(
         "🤖 Use AI to polish ONLY the 'Details' section (keeps layout fixed)",
-        value=True
+        value=bool(st.session_state.get("use_ai", True)),
     )
+    st.session_state.use_ai = use_ai
 
     if use_ai and not client:
         st.warning("AI is ON, but OPENAI_API_KEY is not set in secrets. Using your text as-is.")
@@ -545,43 +584,76 @@ with st.form("report_form"):
     local = st.text_input("📍 Place Name", key="place_name")
     reference = st.text_input("🔢 Reference Number (RDL)", key="rdl")
 
+    # WJS label block only for install/deinstall (like before)
     if report_type in ["INSTALLATION", "DEINSTALLATION"]:
-        st.markdown("### 🏷️ WJS Info (auto-filled from label photo — you can edit)")
+        st.markdown("### 🏷️ WJS Info (optional)")
         st.text_input("Item", key="wjs_item")
         st.text_input("P/N", key="wjs_pn")
         st.text_input("S/N (Serial)", key="wjs_sn")
 
-    # SST BF - replacement list inputs
+    # WJS BF: problem preset picker (advanced)
+    if report_type == "WJS BF":
+        st.markdown("### 🧠 WJS BF - Common Issue Presets (optional)")
+        st.session_state.wjs_bf_problem = st.selectbox(
+            "Select a common issue to auto-fill the Details text",
+            list(WJS_BF_PROBLEMS.keys()),
+            index=list(WJS_BF_PROBLEMS.keys()).index(st.session_state.get("wjs_bf_problem", "— Select a common issue —")),
+        )
+        st.caption("You can still edit Details below. The preset just helps you write faster.")
+
+    # SST BF: replacement inputs (advanced)
     sst_items: List[Dict[str, str]] = []
     if report_type == "SST BF":
-        st.markdown("### 🔁 SST BF - Replacement Items (Old SN / New SN)")
+        st.markdown("### 🔁 SST BF - Components to Replace (Old SN / New SN)")
+        st.caption("Tip: choose a component from the dropdown; use 'Other' to type.")
+
         for idx, row in enumerate(st.session_state.sst_replacements):
             st.markdown(f"**Component #{idx+1}**")
-            comp = st.text_input(
-                f"Component name #{idx+1}",
-                value=row.get("component", ""),
-                key=f"sst_comp_{idx}",
+
+            choice = st.selectbox(
+                f"Component type #{idx+1}",
+                SST_COMPONENT_CHOICES,
+                index=SST_COMPONENT_CHOICES.index(row.get("choice", "Slip Reader")) if row.get("choice") in SST_COMPONENT_CHOICES else 0,
+                key=f"sst_choice_{idx}",
             )
-            old_sn = st.text_input(
-                f"OLD SN #{idx+1}",
-                value=row.get("old_sn", ""),
-                key=f"sst_old_{idx}",
-            )
-            new_sn = st.text_input(
-                f"NEW SN #{idx+1}",
-                value=row.get("new_sn", ""),
-                key=f"sst_new_{idx}",
-            )
+
+            comp_value = row.get("component", "")
+            if choice == "Other (type manually)":
+                comp = st.text_input(
+                    f"Component name #{idx+1}",
+                    value=comp_value if comp_value and comp_value not in SST_COMPONENT_CHOICES else "",
+                    key=f"sst_comp_{idx}",
+                )
+            else:
+                comp = choice
+                # show readonly-ish preview
+                st.text_input(
+                    f"Component name #{idx+1}",
+                    value=comp,
+                    key=f"sst_comp_preview_{idx}",
+                    disabled=True,
+                )
+
+            old_sn = st.text_input(f"OLD SN #{idx+1}", value=row.get("old_sn", ""), key=f"sst_old_{idx}")
+            new_sn = st.text_input(f"NEW SN #{idx+1}", value=row.get("new_sn", ""), key=f"sst_new_{idx}")
+
             sst_items.append({"component": comp, "old_sn": old_sn, "new_sn": new_sn})
+
             st.divider()
+
+    # Details box (always present)
+    details_placeholder = "Example:\nPower supply failure in ceiling. Power supply replaced + extension added. Tested OK."
+    if report_type == "WJS BF":
+        details_placeholder = "Example:\nPower supply failure. Replaced ceiling PSU + extension. Verified normal operation."
+    if report_type == "SST BF":
+        details_placeholder = "Optional notes (facts only). Example:\nSlip reader error observed. Replacement performed. SST tested OK."
 
     descricao = st.text_area(
         "📝 Details (facts only — what happened / issues / time / actions taken)",
-        placeholder="Example:\nPower supply failure in ceiling. Power supply replaced + extension added. Tested OK."
+        placeholder=details_placeholder
     )
 
     st.markdown("### 🔧 Additional Materials Used")
-
     col1, col2 = st.columns(2)
     with col1:
         cat5 = st.checkbox("CAT5 Network Cable: L63")
@@ -589,7 +661,6 @@ with st.form("report_form"):
         power_supply = st.checkbox("Power Supply: L64")
         power_cord = st.checkbox("Power Cord: L1")
         transceiver = st.checkbox("Transceiver: L61")
-
     with col2:
         transpower = st.checkbox("Transceiver Power: L62")
         powerbar = st.checkbox("Power Bar: L38")
@@ -601,12 +672,32 @@ with st.form("report_form"):
         placeholder="Cable ties\nVelcro straps\nEthernet coupler"
     )
 
-    submitted = st.form_submit_button("✅ Generate Report")
+    submitted = st.form_submit_button("✅ Generate")
 
 # =====================
-# BUILD REPORT
+# SST BF add/remove controls (OUTSIDE form)
+# =====================
+if st.session_state.get("report_type_preview") == "SST BF":
+    st.subheader("➕➖ Manage SST BF Components")
+    cA, cB, cC = st.columns([1, 1, 2])
+    with cA:
+        if st.button("➕ Add component", key="btn_add_comp"):
+            st.session_state.sst_replacements.append({"choice": "Slip Reader", "component": "Slip Reader", "old_sn": "", "new_sn": ""})
+            st.rerun()
+    with cB:
+        if st.button("➖ Remove last", key="btn_remove_comp"):
+            if len(st.session_state.sst_replacements) > 1:
+                st.session_state.sst_replacements.pop()
+                st.rerun()
+    with cC:
+        st.caption("Add/remove here, then fill the fields inside the form above.")
+    st.divider()
+
+# =====================
+# BUILD OUTPUTS
 # =====================
 if submitted:
+    # Extras
     itens_extras: List[str] = []
     if cat5: itens_extras.append("CAT5 Network Cable: L63")
     if extension: itens_extras.append("Power Extension: L38A")
@@ -617,20 +708,14 @@ if submitted:
     if powerbar: itens_extras.append("Power Bar: L38")
     if steel: itens_extras.append("Steel Cable: L48")
     if chain: itens_extras.append("Hanging Chain: L46")
-
-    if (extras_custom or "").strip():
+    if _strip(extras_custom):
         itens_extras.extend([i.strip() for i in extras_custom.split("\n") if i.strip()])
-
     extras_block = format_extras(itens_extras)
 
-    details_final = (descricao or "").strip()
-    if use_ai and details_final:
-        with st.spinner("Polishing details with AI..."):
-            details_final = polish_details_ai(details_final)
+    local_clean = _strip(local)
+    reference_clean = _ensure_rdl_prefix(reference)
 
-    local_clean = (local or "").strip()
-    reference_clean = (reference or "").strip()
-
+    # WJS info block (install/deinstall only)
     wjs_info_block = ""
     if report_type in ["INSTALLATION", "DEINSTALLATION"]:
         wjs_info_block = format_wjs_info(
@@ -639,112 +724,112 @@ if submitted:
             st.session_state.wjs_sn,
         )
 
-    # -----------------
-    # Generate outputs
-    # -----------------
+    # Details: apply presets + optional user notes
+    details_raw = _strip(descricao)
+
+    if report_type == "WJS BF":
+        preset = WJS_BF_PROBLEMS.get(st.session_state.get("wjs_bf_problem", ""), "")
+        # If user did not type details, auto-fill with preset.
+        # If user typed, append preset only if preset exists and user didn't already paste a long paragraph.
+        if not details_raw and preset:
+            details_raw = preset
+        elif details_raw and preset and preset not in details_raw:
+            # keep user notes first, then preset
+            details_raw = f"{details_raw}\n\n{preset}"
+
+    # AI polish (optional)
+    details_final = details_raw
+    if use_ai and details_final:
+        with st.spinner("Polishing details with AI..."):
+            details_final = polish_details_ai(details_final)
+
+    # ========== Generate per type ==========
     if report_type == "PM":
         texto_final = template_pm(local_clean, reference_clean, details_final, extras_block)
 
-        st.divider()
         st.subheader("📄 Generated Report")
         st.code(texto_final, language="text")
-
-        colA, colB = st.columns(2)
-        with colA:
-            copy_to_clipboard_button(texto_final)
-        with colB:
-            st.download_button(
-                "⬇️ Download Report (.txt)",
-                data=texto_final,
-                file_name="pm_report.txt",
-                mime="text/plain",
-            )
+        c1, c2 = st.columns(2)
+        with c1:
+            copy_to_clipboard_button(texto_final, key="copy_pm", button_label="📋 Copy Report")
+        with c2:
+            st.download_button("⬇️ Download (.txt)", data=texto_final, file_name="pm_report.txt", mime="text/plain")
 
     elif report_type == "INSTALLATION":
         texto_final = template_installation(local_clean, reference_clean, details_final, extras_block, wjs_info_block)
 
-        st.divider()
         st.subheader("📄 Generated Report")
         st.code(texto_final, language="text")
-
-        colA, colB = st.columns(2)
-        with colA:
-            copy_to_clipboard_button(texto_final)
-        with colB:
-            st.download_button(
-                "⬇️ Download Report (.txt)",
-                data=texto_final,
-                file_name="installation_report.txt",
-                mime="text/plain",
-            )
+        c1, c2 = st.columns(2)
+        with c1:
+            copy_to_clipboard_button(texto_final, key="copy_install", button_label="📋 Copy Report")
+        with c2:
+            st.download_button("⬇️ Download (.txt)", data=texto_final, file_name="installation_report.txt", mime="text/plain")
 
     elif report_type == "DEINSTALLATION":
         texto_final = template_deinstallation(local_clean, reference_clean, details_final, extras_block, wjs_info_block)
 
-        st.divider()
         st.subheader("📄 Generated Report")
         st.code(texto_final, language="text")
-
-        colA, colB = st.columns(2)
-        with colA:
-            copy_to_clipboard_button(texto_final)
-        with colB:
-            st.download_button(
-                "⬇️ Download Report (.txt)",
-                data=texto_final,
-                file_name="deinstallation_report.txt",
-                mime="text/plain",
-            )
+        c1, c2 = st.columns(2)
+        with c1:
+            copy_to_clipboard_button(texto_final, key="copy_deinstall", button_label="📋 Copy Report")
+        with c2:
+            st.download_button("⬇️ Download (.txt)", data=texto_final, file_name="deinstallation_report.txt", mime="text/plain")
 
     elif report_type == "WJS BF":
         texto_final = template_wjs_bf(local_clean, reference_clean, details_final, extras_block)
 
-        st.divider()
         st.subheader("📄 WJS BF - Service Report Summary")
         st.code(texto_final, language="text")
-
-        colA, colB = st.columns(2)
-        with colA:
-            copy_to_clipboard_button(texto_final)
-        with colB:
-            st.download_button(
-                "⬇️ Download WJS BF Report (.txt)",
-                data=texto_final,
-                file_name="wjs_bf_report.txt",
-                mime="text/plain",
-            )
+        c1, c2 = st.columns(2)
+        with c1:
+            copy_to_clipboard_button(texto_final, key="copy_wjs_bf", button_label="📋 Copy Report")
+        with c2:
+            st.download_button("⬇️ Download (.txt)", data=texto_final, file_name="wjs_bf_report.txt", mime="text/plain")
 
     else:  # SST BF
-        # Texto 1: email request
-        email_text = format_sst_bf_request_email(reference_clean, sst_items)
+        # Normalize sst_items from form inputs; also persist selections back into session_state
+        normalized_items: List[Dict[str, str]] = []
+        for idx, it in enumerate(sst_items):
+            comp = _strip(it.get("component"))
+            old_sn = _strip(it.get("old_sn"))
+            new_sn = _strip(it.get("new_sn"))
+            if comp or old_sn or new_sn:
+                normalized_items.append({"component": comp, "old_sn": old_sn, "new_sn": new_sn})
 
-        # Texto 2: replacement report (no formato que você pediu)
-        sst_report_text = template_sst_bf_replacement_report(sst_items)
+            # persist into session state list for next run
+            if idx < len(st.session_state.sst_replacements):
+                st.session_state.sst_replacements[idx]["component"] = comp
+                st.session_state.sst_replacements[idx]["old_sn"] = old_sn
+                st.session_state.sst_replacements[idx]["new_sn"] = new_sn
+                # choice is stored by selectbox key; keep existing
+                st.session_state.sst_replacements[idx]["choice"] = st.session_state.get(f"sst_choice_{idx}", st.session_state.sst_replacements[idx].get("choice", "Slip Reader"))
 
-        st.divider()
+        email_text = format_sst_bf_request_email(reference_clean, normalized_items)
+        report_text = template_sst_bf_replacement_report(normalized_items)
+
+        # Super-fast combined copy (both texts)
+        combined = f"{email_text}\n\n" + ("=" * 60) + "\n\n" + report_text
+
         st.subheader("📧 SST BF - Ref Number Request Email")
         st.code(email_text, language="text")
-        col1, col2 = st.columns(2)
-        with col1:
-            copy_to_clipboard_button(email_text, button_label="📋 Copy Email")
-        with col2:
-            st.download_button(
-                "⬇️ Download Email Request (.txt)",
-                data=email_text,
-                file_name="sst_bf_email_request.txt",
-                mime="text/plain",
-            )
 
-        st.divider()
+        c1, c2 = st.columns(2)
+        with c1:
+            copy_to_clipboard_button(email_text, key="copy_sst_email", button_label="📋 Copy Email")
+        with c2:
+            st.download_button("⬇️ Download Email (.txt)", data=email_text, file_name="sst_bf_email_request.txt", mime="text/plain")
+
         st.subheader("📄 SST BF - Replacement Report")
-        st.code(sst_report_text, language="text")
-        col3, col4 = st.columns(2)
-        with col3:
-            copy_to_clipboard_button(sst_report_text, button_label="📋 Copy Report")
-        with col4:
-            st.download_button(
-                "⬇️ Download Replacement Report (.txt)",
-                data=sst_report_text,
-                file_name="sst_bf_replacement_report.txt",
-                mime="text/plain",
-            )
+        st.code(report_text, language="text")
+
+        c3, c4 = st.columns(2)
+        with c3:
+            copy_to_clipboard_button(report_text, key="copy_sst_report", button_label="📋 Copy Report")
+        with c4:
+            st.download_button("⬇️ Download Report (.txt)", data=report_text, file_name="sst_bf_replacement_report.txt", mime="text/plain")
+
+        st.subheader("⚡ One-click Copy (Email + Report)")
+        copy_to_clipboard_button(combined, key="copy_sst_both", button_label="📋 Copy Both (Email + Report)")
+        st.download_button("⬇️ Download Both (.txt)", data=combined, file_name="sst_bf_email_and_report.txt", mime="text/plain")
