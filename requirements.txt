@@ -3,6 +3,7 @@ tinydb
 streamlit_qrcode_scanner
 openai
 langchain
+langchain-core
 langchain-community
 langchain-text-splitters
 faiss-cpu
