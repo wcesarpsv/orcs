@@ -1,0 +1,3 @@
+# Merge into the existing config; do not duplicate an existing [server] section.
+[server]
+enableStaticServing = true

@@ -8,6 +8,10 @@ import streamlit as st
 import streamlit.components.v1 as components
 from openai import OpenAI
 from PIL import Image
+from jackpots_publisher import start_publisher
+
+# Keep the C6 snapshot updated while this Streamlit process is running.
+start_publisher()
 
 # =====================
 # CONFIG
@@ -493,3 +497,4 @@ if submitted:
             file_name=f"{report_type.lower()}_report.txt",
             mime="text/plain",
         )
+
