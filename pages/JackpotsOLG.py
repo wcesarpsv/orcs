@@ -20,7 +20,7 @@ def show_snapshot():
     st.write('Status:', result['status'], '| Consulta UTC:', result['checked_at'])
     if not result['transmit_allowed']:
         st.warning('Dados indisponíveis, incompletos ou vencidos. Envio dos valores publicado como bloqueado.')
-    st.link_button('JSON para o C6', 'https://orcomputer.streamlit.app/app/static/jackpots_current.json')
+    st.link_button('JSON para o C6', 'https://orcomputer.streamlit.app/~/+/app/static/jackpots_current.json')
     with st.expander('JSON publicado e diagnóstico'):
         st.json(result)
 
