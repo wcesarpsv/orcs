@@ -23,4 +23,17 @@ def show_snapshot():
     st.link_button('JSON para o C6', 'https://orcomputer.streamlit.app/app/static/jackpots_current.json')
     with st.expander('JSON publicado e diagnóstico'):
         st.json(result)
+
+    with st.expander('Diagnóstico do acesso do C6', expanded=True):
+        from pathlib import Path
+        import streamlit
+        static_enabled = st.get_option('server.enableStaticServing')
+        st.write('Serviço de arquivos estáticos ativo:', static_enabled)
+        st.write('Arquivo JSON existe no servidor:', worker.path.is_file())
+        st.write('Pasta do JSON:', str(worker.path.parent))
+        st.write('Streamlit:', streamlit.__version__)
+        st.download_button('Baixar JSON atual', __import__('json').dumps(result, ensure_ascii=False, indent=2),
+                           'jackpots_current.json', 'application/json', key='current_snapshot_download')
+        if not static_enabled:
+            st.error('O servidor está com enableStaticServing desativado, apesar do arquivo no repositório.')
 show_snapshot()
