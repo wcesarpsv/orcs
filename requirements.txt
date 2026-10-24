@@ -15,4 +15,4 @@ pillow
 python-docx
 pyzbar
 pandas
-BeautifulSoup
+beautifulsoup
