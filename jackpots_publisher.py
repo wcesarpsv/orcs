@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import requests
 from olg_parser import parse_jackpots
 
-SOURCE = 'https://www.lotterypost.com/results/zz'
+SOURCE = 'https://chinese.olg.ca/sc/index.php/lotto_max.php'
 REFRESH_SECONDS = 120
 VALID_SECONDS = 300
 _workers = {}
@@ -29,7 +29,7 @@ def make_snapshot(html, now=None):
     errors = []
     for key in ('lotto_max', 'gold_ball', 'maxmillions'):
         v = values.get(key)
-        if type(v) is not int or not 0 <= v <= 200:
+        if type(v) is not int or not (0 if key == 'maxmillions' else 1) <= v <= 200:
             errors.append(f'{key}: missing/conflicting/out of range')
     for key in ('lotto_max', 'gold_ball'):
         try:
@@ -94,17 +94,18 @@ class Publisher:
         try:
             r = requests.get(SOURCE, headers={
                 'User-Agent': 'Mozilla/5.0 (ORComputer Jackpot Publisher/7.0)',
-                'Accept-Language': 'en-CA,en;q=0.9',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             }, timeout=(8, 20))
             r.raise_for_status()
             if len(r.content) > 2_000_000:
-                raise ValueError('Lottery Post response too large')
+                raise ValueError('OLG response too large')
+            r.encoding = 'utf-8'
             result = make_snapshot(r.text)
         except requests.HTTPError as exc:
             code = exc.response.status_code if exc.response is not None else 'unknown'
-            result = failure_snapshot(f'Lottery Post fetch failed: HTTP {code}')
+            result = failure_snapshot(f'OLG fetch failed: HTTP {code}')
         except Exception as exc:
-            result = failure_snapshot(f'Lottery Post fetch failed: {type(exc).__name__}')
+            result = failure_snapshot(f'OLG fetch failed: {type(exc).__name__}')
         with self.lock:
             atomic_publish(self.path, result)
 
@@ -140,3 +141,4 @@ def start_publisher(static_dir=None):
             worker = Publisher(directory)
             _workers[str(directory)] = worker
         return worker
+

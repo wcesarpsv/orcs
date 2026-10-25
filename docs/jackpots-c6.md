@@ -3,7 +3,7 @@
 Human dashboard: https://orcomputer.streamlit.app/JackpotsOLG
 Device JSON: https://orcomputer.streamlit.app/app/static/jackpots_current.json
 
-The Streamlit process fetches https://www.lotterypost.com/results/zz using the Lottery Post parser, then
+The Streamlit process fetches https://chinese.olg.ca/sc/index.php/lotto_max.php using the Chinese OLG parser, then
 atomically publishes one small snapshot every 120 seconds. Valid snapshots expire
 after 300 seconds. Failure publishes null values and transmit_allowed=false.
 The committed JSON contains only an unavailable startup placeholder.
@@ -25,13 +25,14 @@ After sleep/restart it may be necessary to open the dashboard again. Expiration
 checks on the C6 prevent an old static response from authorizing stale values.
 This feed is not a guarantee of unattended 24/7 service on Community Cloud.
 
-The parser reads only the Lotto Max and Canada Lotto 6/49 next-draw panels,
-using CA$ amounts in millions and each game's next drawing date. US$ conversions,
-historical results, and changes from the previous jackpot are ignored.
-Maxmillions is temporarily fixed at 0 by explicit request, even when historical
-MaxMillions/MaxPlus links exist. The snapshot reports maxmillions_mode=fixed_zero.
-Automatic upcoming Maxmillions extraction is not yet enabled; validate a real
-upcoming-count example before changing this policy. Missing games, malformed
-amounts/dates, and conflicting panels block the feed rather than fabricate values.
+The parser identifies Lotto Max and Gold Ball panels by their game images/classes,
+reads machine-readable next-draw dates, and checks the visible dates agree.
+It supports full dollar amounts and Chinese units, including 2.5千万元 = CAD25M.
+The Gold Ball amount is selected beside its logo, excluding the classic CAD5M.
+Repeated banner/card values must agree. Other games and historical results cannot
+supply a missing value. Missing, zero, fractional, stale, or conflicting main
+jackpots block transmission. Maxmillions remains explicitly fixed at 0.
+The normal fetch uses HTML already returned by OLG; Chromium is not needed.
+The Lottery Post browser diagnostic is no longer exposed on the dashboard.
 
 Tests: python -m unittest discover -s tests -p 'test_jackpots_publisher.py' -v
