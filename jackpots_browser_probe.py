@@ -1,5 +1,7 @@
 """One-shot Chromium diagnostic. Never publishes or authorizes C6 values."""
 import json
+import os
+import importlib.util
 import shutil
 import subprocess
 import sys
@@ -15,9 +17,19 @@ def probe():
     if not _LOCK.acquire(blocking=False):
         return {'ok': False, 'error': 'Um teste já está em andamento.'}
     try:
+        if importlib.util.find_spec('playwright') is None:
+            return {'ok': False, 'stage': 'streamlit_dependencies',
+                    'error': 'Playwright não está instalado no ambiente do próprio Streamlit.',
+                    'probe_version': 2}
+        # Cloud launchers may add their managed environment to sys.path without
+        # changing sys.executable. Carry these paths into the isolated process.
+        environment = os.environ.copy()
+        environment['PYTHONPATH'] = os.pathsep.join(
+            str(Path(p or os.getcwd()).resolve()) for p in sys.path)
         completed = subprocess.run(
             [sys.executable, str(Path(__file__).resolve()), '--child'],
-            capture_output=True, text=True, timeout=70, check=False)
+            capture_output=True, text=True, timeout=70, check=False,
+            env=environment)
         if completed.returncode:
             return {'ok': False, 'error': 'Falha ao executar o teste do navegador.'}
         return json.loads(completed.stdout)
@@ -31,7 +43,7 @@ def probe():
 
 def child_probe():
     result = {'ok': False, 'checked_at': datetime.now(timezone.utc).isoformat(),
-              'source': URL, 'publishes_to_c6': False}
+              'source': URL, 'publishes_to_c6': False, 'probe_version': 2}
     try:
         from playwright.sync_api import sync_playwright, TimeoutError as BrowserTimeout
         from jackpots_publisher import make_snapshot
