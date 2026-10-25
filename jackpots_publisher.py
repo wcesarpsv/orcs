@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import requests
 from olg_parser import parse_jackpots
 
-SOURCE = 'https://chinese.olg.ca/sc/index.php/lotto_max.php'
+SOURCE = 'https://www.lotterypost.com/results/zz'
 REFRESH_SECONDS = 120
 VALID_SECONDS = 300
 _workers = {}
@@ -48,6 +48,7 @@ def make_snapshot(html, now=None):
         'checked_at': now.isoformat(timespec='seconds'),
         'generated_at_unix': int(now.timestamp()),
         'expires_at_unix': int(now.timestamp()) + VALID_SECONDS,
+        'maxmillions_mode': 'fixed_zero',
         'source': SOURCE,
         'served_by': 'orcomputer.streamlit.app',
         'errors': errors,
@@ -61,6 +62,7 @@ def failure_snapshot(message, now=None):
         'values': dict.fromkeys(('lotto_max', 'gold_ball', 'maxmillions')),
         'draw_dates': {}, 'checked_at': now.isoformat(timespec='seconds'),
         'generated_at_unix': int(now.timestamp()), 'expires_at_unix': int(now.timestamp()),
+        'maxmillions_mode': 'fixed_zero',
         'source': SOURCE, 'served_by': 'orcomputer.streamlit.app',
         'errors': [message],
     }
@@ -92,14 +94,14 @@ class Publisher:
         try:
             r = requests.get(SOURCE, headers={
                 'User-Agent': 'Mozilla/5.0 (ORComputer Jackpot Publisher/7.0)',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                'Accept-Language': 'en-CA,en;q=0.9',
             }, timeout=(8, 20))
             r.raise_for_status()
             if len(r.content) > 2_000_000:
-                raise ValueError('OLG response too large')
+                raise ValueError('Lottery Post response too large')
             result = make_snapshot(r.text)
         except Exception as exc:
-            result = failure_snapshot(f'OLG fetch failed: {type(exc).__name__}')
+            result = failure_snapshot(f'Lottery Post fetch failed: {type(exc).__name__}')
         with self.lock:
             atomic_publish(self.path, result)
 

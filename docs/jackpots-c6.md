@@ -1,9 +1,9 @@
 # Streamlit jackpot feed for ESP32-C6
 
 Human dashboard: https://orcomputer.streamlit.app/JackpotsOLG
-Device JSON: https://orcomputer.streamlit.app/~/+/app/static/jackpots_current.json
+Device JSON: https://orcomputer.streamlit.app/app/static/jackpots_current.json
 
-The Streamlit process fetches the OLG source using the existing parser, then
+The Streamlit process fetches https://www.lotterypost.com/results/zz using the Lottery Post parser, then
 atomically publishes one small snapshot every 120 seconds. Valid snapshots expire
 after 300 seconds. Failure publishes null values and transmit_allowed=false.
 The committed JSON contains only an unavailable startup placeholder.
@@ -25,12 +25,13 @@ After sleep/restart it may be necessary to open the dashboard again. Expiration
 checks on the C6 prevent an old static response from authorizing stale values.
 This feed is not a guarantee of unattended 24/7 service on Community Cloud.
 
-The parser retains the existing zero-Maxmillions rule when a next-jackpot section
-is recognized but no explicit Maxmillions line exists. Review parser assumptions
-if OLG changes its layout or prize categories.
+The parser reads only the Lotto Max and Canada Lotto 6/49 next-draw panels,
+using CA$ amounts in millions and each game's next drawing date. US$ conversions,
+historical results, and changes from the previous jackpot are ignored.
+Maxmillions is temporarily fixed at 0 by explicit request, even when historical
+MaxMillions/MaxPlus links exist. The snapshot reports maxmillions_mode=fixed_zero.
+Automatic upcoming Maxmillions extraction is not yet enabled; validate a real
+upcoming-count example before changing this policy. Missing games, malformed
+amounts/dates, and conflicting panels block the feed rather than fabricate values.
 
 Tests: python -m unittest discover -s tests -p 'test_jackpots_publisher.py' -v
-
-The /~/+/ prefix is the deployed Community Cloud iframe route observed on this app.
-The unprefixed URL may load the Cloud wrapper instead of raw JSON. Recheck this
-route after hosting changes; it is deployment-specific.

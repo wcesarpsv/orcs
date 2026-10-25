@@ -9,17 +9,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from jackpots_publisher import make_snapshot, failure_snapshot, atomic_publish
 
 NOW = datetime(2026,10,24,16,0,tzinfo=timezone.utc)
-def html(maximum=25, gold=28, count=20, date='2026年10月27日'):
-    return f'''<html><script>fake $99999999</script><div>下期头奖将于2026年10月24日
-    <h2>$5,000,000</h2><h2>${gold},000,000</h2>或1百万元大奖</div>
-    <div>下期头奖将于{date}<h2>${maximum},000,000 估计彩金</h2>
-    另加{count}项1百万元的MAXMILLIONS</div></html>'''
+def html(maximum=25, gold=28, count=0, date='Tue, Oct 27, 2026, 10:30 pm'):
+    def panel(name, value, draw, label):
+        return f'''<div class="resultsdrawing"><section><h2>{name}</h2>
+        <time>Historical draw</time><a>20 MaxMillions/MaxPlus Draws</a></section>
+        <section><div class="resultsNextDrawInfo"><strong>Next Drawing:</strong>
+        <span class="resultsnextdate">{draw}</span></div>
+        <div class="resultsJackpotAmount"><strong>{label}</strong>
+        <span>CA${value} Million<br><span>US$999 Million</span></span></div>
+        <div class="resultsJackpotChange">CA$100 Million</div></section></div>'''
+    return (panel('Canada Lotto 6/49', gold, 'Sat, Oct 24, 2026, 10:30 pm', 'Next Gold Ball Jackpot:')
+            + panel('Lotto Max', maximum, date, 'Next Jackpot:'))
 
 class PublisherTests(unittest.TestCase):
     def test_valid_snapshot_and_lifetime(self):
         d=make_snapshot(html(),NOW)
         self.assertTrue(d['transmit_allowed'])
-        self.assertEqual(d['values'],dict(lotto_max=25,gold_ball=28,maxmillions=20))
+        self.assertEqual(d['values'],dict(lotto_max=25,gold_ball=28,maxmillions=0))
         self.assertEqual(d['expires_at_unix']-d['generated_at_unix'],300)
         self.assertEqual(d['schema_version'],1)
     def test_conflicting_same_draw_blocks_invalid(self):
@@ -27,9 +33,9 @@ class PublisherTests(unittest.TestCase):
         self.assertFalse(d['transmit_allowed'])
         self.assertTrue(all(v is None for v in d['values'].values()))
     def test_stale_date(self):
-        self.assertFalse(make_snapshot(html(date='2026年10月20日'),NOW)['transmit_allowed'])
+        self.assertFalse(make_snapshot(html(date='Tue, Oct 20, 2026, 10:30 pm'),NOW)['transmit_allowed'])
     def test_impossible_date(self):
-        self.assertFalse(make_snapshot(html(date='2026年02月31日'),NOW)['transmit_allowed'])
+        self.assertFalse(make_snapshot(html(date='Tue, Feb 31, 2026, 10:30 pm'),NOW)['transmit_allowed'])
     def test_missing_or_changed_page(self):
         self.assertFalse(make_snapshot('<html>New layout</html>',NOW)['transmit_allowed'])
     def test_out_of_range(self):
@@ -51,5 +57,19 @@ class PublisherTests(unittest.TestCase):
     def test_toronto_date_near_utc_midnight(self):
         now=datetime(2026,10,25,0,30,tzinfo=timezone.utc)
         self.assertTrue(make_snapshot(html(),now)['transmit_allowed'])
+
+    def test_missing_maxmillions_is_explicit_zero(self):
+        d=make_snapshot(html(), NOW)
+        self.assertEqual(d['values']['maxmillions'], 0)
+        self.assertEqual(d['maxmillions_mode'], 'fixed_zero')
+    def test_us_currency_is_not_used(self):
+        self.assertEqual(make_snapshot(html(), NOW)['values']['lotto_max'], 25)
+        self.assertFalse(make_snapshot(html().replace('CA$', 'US$'), NOW)['transmit_allowed'])
+    def test_missing_game_never_defaults_jackpots(self):
+        self.assertFalse(make_snapshot(html().replace('Lotto Max', 'Other Game'), NOW)['transmit_allowed'])
+    def test_fractional_amount_is_not_truncated(self):
+        self.assertFalse(make_snapshot(html(maximum='25.5'), NOW)['transmit_allowed'])
+    def test_future_date_outside_window(self):
+        self.assertFalse(make_snapshot(html(date='Tue, Nov 10, 2026, 10:30 pm'), NOW)['transmit_allowed'])
 
 if __name__=='__main__': unittest.main()

@@ -1,48 +1,59 @@
+"""Read upcoming Canadian jackpots from Lottery Post, excluding past results."""
 import re
+from datetime import date
+from decimal import Decimal
 from bs4 import BeautifulSoup
+
+# Explicit temporary policy; do not read counts from historical results links.
+# Validate a real upcoming-count example before enabling automatic extraction.
+MAXMILLIONS_DEFAULT = 0
+MONTHS = {name: i for i, name in enumerate(
+    ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'), 1)}
+
 
 def parse_jackpots(html):
     soup = BeautifulSoup(html, 'html.parser')
-    for tag in soup(['script', 'style', 'nav', 'footer']): tag.decompose()
-    text = soup.get_text(' ', strip=True)
-    # The Chinese OLG page includes repeated jackpot panels. Focus on the
-    # first next-draw jackpot block rather than historical winning numbers.
-    blocks = re.split(r'下期头奖将于\s*', text)
-    max_candidates = []
-    gold_candidates = []
-    for block in blocks[1:]:
-        prefix = block[:350]
-        date = re.search(r'(20\d{2})年(\d{1,2})月(\d{1,2})日', prefix)
-        draw_date = f'{int(date[1]):04d}-{int(date[2]):02d}-{int(date[3]):02d}' if date else None
-        # Gold Ball section includes a separate classic $5m and Gold Ball amount.
-        if 'goldball' in prefix.lower() or '或1百万元大奖' in prefix:
-            money = re.findall(r'\$\s*([\d,]+)', prefix)
-            if len(money) >= 2:
-                gold_candidates.append((draw_date, int(money[1].replace(',', '')) // 1_000_000, prefix))
-        # Maxmillions block: estimated jackpot and explicit MAXMILLIONS count.
-        if '估计彩金' in prefix or 'MAXMILLIONS' in prefix.upper():
-            dollars = re.search(r'\$\s*([\d,]+)\s*估计彩金', prefix)
-            chinese = re.search(r'(\d+(?:\.\d+)?)\s*千万元\s*估计彩金', prefix)
-            if dollars:
-                max_value = int(dollars[1].replace(',', '')) // 1_000_000
-            elif chinese:
-                max_value = int(float(chinese[1]) * 10)
-            else:
-                max_value = None
-            mm = re.search(r'另加\s*(\d+)\s*项\s*1百万元的\s*MAXMILLIONS', prefix, re.I)
-            # No explicit Maxmillions line means zero only if the next-draw
-            # jackpot section is otherwise positively identified.
-            if max_value is not None:
-                max_candidates.append((draw_date, max_value, int(mm[1]) if mm else 0, prefix))
-    # Reject conflicting snapshots rather than silently choosing one.
-    def unique_latest(items):
-        valid = [x for x in items if x[0]]
-        if not valid: return None
-        latest = max(x[0] for x in valid)
-        matching = [x for x in valid if x[0] == latest]
-        return matching[0] if len({str(x[1:-1]) for x in matching}) == 1 else None
-    m = unique_latest(max_candidates)
-    g = unique_latest(gold_candidates)
-    values = {'lotto_max': m[1] if m else None, 'gold_ball': g[1] if g else None, 'maxmillions': m[2] if m else None}
-    return {'values': values, 'draw_dates': {'lotto_max': m[0] if m else None, 'gold_ball': g[0] if g else None}, 'evidence': {'lotto_max': m[3] if m else None, 'gold_ball': g[2] if g else None}, 'excerpt': text[:1200]}
+    for tag in soup(['script', 'style', 'nav', 'footer']):
+        tag.decompose()
+    candidates = {'lotto_max': [], 'gold_ball': []}
+    for block in soup.select('.resultsdrawing'):
+        heading = block.find('h2')
+        name = heading.get_text(' ', strip=True) if heading else ''
+        key = {'Lotto Max': 'lotto_max', 'Canada Lotto 6/49': 'gold_ball'}.get(name)
+        if key is None:
+            continue
+        dates = block.select('.resultsnextdate')
+        amounts = block.select('.resultsJackpotAmount')
+        if len(dates) != 1 or len(amounts) != 1:
+            candidates[key].append(None)
+            continue
+        upcoming = dates[0].get_text(' ', strip=True)
+        money = amounts[0].get_text(' ', strip=True)
+        label = 'Next Jackpot:' if key == 'lotto_max' else 'Next Gold Ball Jackpot:'
+        match = re.fullmatch(
+            r'[A-Za-z]{3},\s*([A-Za-z]{3})\s+(\d{1,2}),\s*(\d{4}),\s*\d{1,2}:\d{2}\s*[ap]m',
+            upcoming, re.I)
+        dollars = re.findall(r'CA\$\s*([\d,]+(?:\.\d+)?)\s+Million\b', money, re.I)
+        try:
+            draw = date(int(match[3]), MONTHS[match[1].title()], int(match[2])).isoformat()
+            value = Decimal(dollars[0].replace(',', ''))
+            if not money.startswith(label) or len(dollars) != 1 or value != int(value):
+                raise ValueError('Ambiguous or nonintegral jackpot')
+            candidates[key].append((draw, int(value), f'{upcoming} | {money}'))
+        except (TypeError, KeyError, ValueError, IndexError):
+            candidates[key].append(None)
 
+    def unique(items):
+        if not items or None in items or len({x[:2] for x in items}) != 1:
+            return None
+        return items[0]
+
+    m, g = (unique(candidates[key]) for key in ('lotto_max', 'gold_ball'))
+    return {
+        'values': {'lotto_max': m[1] if m else None,
+                   'gold_ball': g[1] if g else None,
+                   'maxmillions': MAXMILLIONS_DEFAULT if m else None},
+        'draw_dates': {'lotto_max': m[0] if m else None, 'gold_ball': g[0] if g else None},
+        'evidence': {'lotto_max': m[2] if m else None, 'gold_ball': g[2] if g else None},
+        'excerpt': soup.get_text(' ', strip=True)[:1200],
+    }
