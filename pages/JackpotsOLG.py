@@ -26,3 +26,25 @@ def show_snapshot():
     with st.expander('JSON publicado e diagnóstico'):
         st.json(result)
 show_snapshot()
+
+
+st.divider()
+st.subheader('Teste de acesso com navegador')
+st.caption('Abre o Lottery Post no Chromium do servidor. Este teste não envia valores para o C6.')
+if st.button('Testar com navegador', key='test_lottery_browser'):
+    import time
+    last_test = st.session_state.get('jackpots_browser_test_at', 0)
+    if time.time() - last_test < 60:
+        st.info('Aguarde 60 segundos entre testes.')
+    else:
+        st.session_state['jackpots_browser_test_at'] = time.time()
+        from jackpots_browser_probe import probe
+        with st.spinner('Abrindo a página no navegador do servidor…'):
+            st.session_state['jackpots_browser_test_result'] = probe()
+if 'jackpots_browser_test_result' in st.session_state:
+    browser_result = st.session_state['jackpots_browser_test_result']
+    if browser_result.get('ok'):
+        st.success('O navegador conseguiu ler e validar os jackpots.')
+    else:
+        st.error(browser_result.get('error', 'O teste não conseguiu validar os jackpots.'))
+    st.json(browser_result)
