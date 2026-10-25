@@ -100,6 +100,9 @@ class Publisher:
             if len(r.content) > 2_000_000:
                 raise ValueError('Lottery Post response too large')
             result = make_snapshot(r.text)
+        except requests.HTTPError as exc:
+            code = exc.response.status_code if exc.response is not None else 'unknown'
+            result = failure_snapshot(f'Lottery Post fetch failed: HTTP {code}')
         except Exception as exc:
             result = failure_snapshot(f'Lottery Post fetch failed: {type(exc).__name__}')
         with self.lock:
@@ -120,7 +123,7 @@ class Publisher:
                 result = json.loads(self.path.read_text(encoding='utf-8'))
             except (OSError, ValueError):
                 return failure_snapshot('Snapshot not available')
-        if time.time() >= result.get('expires_at_unix', 0):
+        if result.get('status') == 'ok' and time.time() >= result.get('expires_at_unix', 0):
             result['status'] = 'expired'
             result['transmit_allowed'] = False
             result['values'] = dict.fromkeys(('lotto_max', 'gold_ball', 'maxmillions'))

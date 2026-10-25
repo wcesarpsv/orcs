@@ -4,9 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import patch, Mock
+import threading
+import requests
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from jackpots_publisher import make_snapshot, failure_snapshot, atomic_publish
+from jackpots_publisher import make_snapshot, failure_snapshot, atomic_publish, Publisher
 
 NOW = datetime(2026,10,24,16,0,tzinfo=timezone.utc)
 def html(maximum=25, gold=28, count=0, date='Tue, Oct 27, 2026, 10:30 pm'):
@@ -71,5 +73,29 @@ class PublisherTests(unittest.TestCase):
         self.assertFalse(make_snapshot(html(maximum='25.5'), NOW)['transmit_allowed'])
     def test_future_date_outside_window(self):
         self.assertFalse(make_snapshot(html(date='Tue, Nov 10, 2026, 10:30 pm'), NOW)['transmit_allowed'])
+
+    def test_http_error_code_survives_snapshot_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worker = Publisher.__new__(Publisher)
+            worker.path = Path(directory) / 'jackpots_current.json'
+            worker.lock = threading.Lock()
+            response = Mock(status_code=403)
+            response.raise_for_status.side_effect = requests.HTTPError(response=response)
+            with patch('jackpots_publisher.requests.get', return_value=response):
+                worker.refresh()
+            result = worker.snapshot()
+            self.assertEqual(result['status'], 'unavailable')
+            self.assertEqual(result['errors'], ['Lottery Post fetch failed: HTTP 403'])
+            self.assertFalse(result['transmit_allowed'])
+    def test_valid_expired_snapshot_is_still_blocked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worker = Publisher.__new__(Publisher)
+            worker.path = Path(directory) / 'jackpots_current.json'
+            worker.lock = threading.Lock()
+            atomic_publish(worker.path, make_snapshot(html(), NOW))
+            with patch('jackpots_publisher.time.time', return_value=NOW.timestamp()+301):
+                result = worker.snapshot()
+            self.assertEqual(result['status'], 'expired')
+            self.assertFalse(result['transmit_allowed'])
 
 if __name__=='__main__': unittest.main()
