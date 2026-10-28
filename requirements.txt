@@ -18,5 +18,6 @@ pandas
 requests>=2.31
 beautifulsoup4>=4.12
 tzdata>=2024.1
-
 playwright>=1.48,<2
+Pillow>=10,<13
+reportlab>=4,<5
