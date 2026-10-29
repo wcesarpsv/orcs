@@ -106,7 +106,12 @@ def polish(client, text):
     return (response.choices[0].message.content or text).strip()
 
 
-def build_report(kind, place, rdl, details, units, extras):
+def build_report(kind, place, rdl, details, units, extras, key_collected=None, key_reason=""):
+    if kind == "PM":
+        if key_collected not in ("Yes", "No"):
+            raise ValueError("Select whether the SST key was collected.")
+        if key_collected == "No" and not key_reason.strip():
+            raise ValueError("Provide the reason the SST key could not be collected.")
     reference = re.sub(r"^RDL\s*:\s*", "", rdl, flags=re.I).strip()
     heading = {
         "PM": "PM completed", "INSTALLATION": "WJS Large Carmanah - Installation",
@@ -114,7 +119,7 @@ def build_report(kind, place, rdl, details, units, extras):
     }[kind]
     sections = [{"text": f"{heading} - {place} (RDL: {reference}) - Summary"}]
     if kind == "PM":
-        body = details + "\n\nBurster bins, rollers, and all related peripherals were cleaned.\nSerial numbers for all components were recorded for database entry.\nAll hardware components, including the pin pad, were tested and verified as operational.\n\nKeys were returned to the retailer upon completion."
+        body = details + "\n\nBurster bins, rollers, and all related peripherals were cleaned.\nSerial numbers for all components were recorded for database entry.\nAll hardware components, including the pin pad, were tested and verified as operational."
     elif kind == "INSTALLATION":
         body = "Upon arrival at the site, the retailer indicated the preferred installation location and desired height for the sign.\n\n" + (details or "No issues reported.")
     elif kind == "DEINSTALLATION":
@@ -139,6 +144,16 @@ def build_report(kind, place, rdl, details, units, extras):
         sections.append({"text": "The equipment is being returned to the warehouse."})
     if extras:
         sections.append({"text": "Additional materials used:\n" + "\n".join("- " + x for x in extras)})
+    if kind == "PM":
+        if key_collected == "Yes":
+            key_text = "SST's key was successfully collected and will be returned to the office."
+        else:
+            key_text = ("SST's key could not be collected for return to the office.\n\n"
+                        + "Reason: " + key_reason.strip()
+                        + "\n\nThe SST's key was returned to the retailer upon completion.")
+        # Keep the key status and retailer return statement at the very end,
+        # including when additional materials are present.
+        sections.append({"text": key_text})
     return sections
 
 
@@ -244,6 +259,11 @@ for title, upload in [("Call screenshot", screenshot)] + [(t, photos[k]) for k, 
             except Exception:
                 st.warning("Cannot display this image. Replace it before generating.")
 
+key_collected = None
+if kind == "PM":
+    key_collected = st.radio("SST’s Key Collected", ["Yes", "No"], index=None,
+                             horizontal=True, key="pm_key_collected")
+
 with st.form("report_form"):
     st.caption("Manual values override photo extraction. Leave a field blank to extract it from the photo.")
     place = st.text_input("📍 Place Name")
@@ -256,10 +276,25 @@ with st.form("report_form"):
         sn = st.text_input("S/N (Serial)", key=kind + unit_key + "_sn")
         manual_units.append({"key": unit_key, "title": title, "item": item.strip(), "pn": pn.strip(), "sn": sn.strip()})
     details = st.text_area("📝 Details — issue, troubleshooting steps and actions taken", height=150)
-    use_ai = st.checkbox("Use AI to polish details only", value=True)
+    key_reason = ""
+    if kind == "PM" and key_collected == "No":
+        key_reason = st.text_area(
+            "Reason the SST key could not be collected for return to the office",
+            placeholder="Explain why the key had to remain with the retailer.",
+            key="pm_key_reason",
+        )
+    use_ai = st.checkbox("Use AI to polish details and key observation", value=True)
     extras = st.multiselect("🔧 Additional materials used", MATERIALS)
     custom = st.text_area("Other materials — one per line")
     submitted = st.form_submit_button("✅ Extract Data & Generate Report")
+
+if submitted and kind == "PM":
+    if key_collected is None:
+        st.warning("Select Yes or No for SST’s Key Collected.")
+        submitted = False
+    elif key_collected == "No" and not key_reason.strip():
+        st.warning("Enter the reason the key could not be collected for return to the office.")
+        submitted = False
 
 if submitted:
     try:
@@ -306,8 +341,14 @@ if submitted:
                         final_details = polish(client, final_details)
                     except Exception:
                         st.warning("AI polish failed. Your original notes were preserved.")
+                final_key_reason = key_reason.strip()
+                if kind == "PM" and key_collected == "No" and client and use_ai:
+                    try:
+                        final_key_reason = polish(client, final_key_reason)
+                    except Exception:
+                        st.warning("AI observation polish failed. Your original reason was preserved.")
                 materials = extras + [line.strip() for line in custom.splitlines() if line.strip()]
-                sections = build_report(kind, place_final, rdl_final, final_details, units, materials)
+                sections = build_report(kind, place_final, rdl_final, final_details, units, materials, key_collected, final_key_reason)
                 st.session_state["generated_report"] = {"sections": sections, "kind": kind}
                 try:
                     st.session_state["generated_report"]["pdf"] = make_pdf(sections)
