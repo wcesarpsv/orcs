@@ -100,13 +100,47 @@ class Publisher:
                 raise ValueError('Loto-Québec response too large')
             r.encoding = 'utf-8'
             result = make_snapshot(r.text)
+            result['fetch_method'] = 'requests'
             if not result['transmit_allowed']:
                 from bs4 import BeautifulSoup
+                import re
                 soup = BeautifulSoup(r.text, 'html.parser')
-                title = soup.title.get_text(' ', strip=True)[:100] if soup.title else '(no title)'
                 body = soup.get_text(' ', strip=True)
-                result['errors'].append(f'Diagnostic: HTTP {r.status_code}, HTML {len(r.content)} bytes, title={title!r}, visible_text={len(body)} chars')
-                result['errors'].append('Diagnostic excerpt: ' + body[:350])
+                scripts = soup.find_all('script')
+                # Check whether the values are embedded in HTML/JSON before
+                # starting a resource-intensive headless browser.
+                result['errors'].append(
+                    f'HTML diagnostic: HTTP {r.status_code}, {len(r.content)} bytes, '
+                    f'visible_text={len(body)}, scripts={len(scripts)}, '
+                    f'gold_ball_in_html={bool(re.search("gold.ball", r.text, re.I))}, '
+                    f'maxmillions_in_html={"maxmillions" in r.text.lower()}'
+                )
+                # A Chromium fallback is optional: Streamlit Cloud may not
+                # have the browser binary installed even with playwright pip.
+                try:
+                    from playwright.sync_api import sync_playwright
+                    with sync_playwright() as playwright:
+                        browser = playwright.chromium.launch(headless=True, args=['--no-sandbox'])
+                        try:
+                            page = browser.new_page(locale='en-CA', viewport={'width': 1280, 'height': 900})
+                            page.goto(SOURCE, wait_until='domcontentloaded', timeout=25000)
+                            page.wait_for_timeout(5000)
+                            rendered = page.content()
+                            browser_result = make_snapshot(rendered)
+                            browser_result['fetch_method'] = 'chromium'
+                            if browser_result['transmit_allowed']:
+                                result = browser_result
+                            else:
+                                result['errors'].append(
+                                    f'Chromium diagnostic: HTML {len(rendered)} bytes, '
+                                    f'visible_text={len(page.locator("body").inner_text())} chars, '
+                                    f'lotto_max={"Lotto Max" in rendered}, '
+                                    f'gold_ball={bool(re.search("gold.ball", rendered, re.I))}'
+                                )
+                        finally:
+                            browser.close()
+                except Exception as exc:
+                    result['errors'].append(f'Chromium unavailable: {type(exc).__name__}: {str(exc)[:180]}')
         except requests.HTTPError as exc:
             code = exc.response.status_code if exc.response is not None else 'unknown'
             result = failure_snapshot(f'Loto-Québec fetch failed: HTTP {code}')
