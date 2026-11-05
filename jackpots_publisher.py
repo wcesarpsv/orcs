@@ -100,6 +100,13 @@ class Publisher:
                 raise ValueError('Loto-Québec response too large')
             r.encoding = 'utf-8'
             result = make_snapshot(r.text)
+            if not result['transmit_allowed']:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(r.text, 'html.parser')
+                title = soup.title.get_text(' ', strip=True)[:100] if soup.title else '(no title)'
+                body = soup.get_text(' ', strip=True)
+                result['errors'].append(f'Diagnostic: HTTP {r.status_code}, HTML {len(r.content)} bytes, title={title!r}, visible_text={len(body)} chars')
+                result['errors'].append('Diagnostic excerpt: ' + body[:350])
         except requests.HTTPError as exc:
             code = exc.response.status_code if exc.response is not None else 'unknown'
             result = failure_snapshot(f'Loto-Québec fetch failed: HTTP {code}')
