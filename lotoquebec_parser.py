@@ -1,53 +1,60 @@
-"""Validated next-draw jackpot extraction from Loto-Québec's English lotteries page."""
+"""Extract the current Loto-Québec jackpot cards without mixing other games.
+
+Reject missing, ambiguous, or malformed fields; the publisher independently checks
+integer ranges and draw-date freshness before enabling the ESP32-C6 feed.
+"""
 import re
-from datetime import datetime, timedelta, date
-from zoneinfo import ZoneInfo
+from datetime import date
 from bs4 import BeautifulSoup
 
 SOURCE = "https://loteries.lotoquebec.com/en/lotteries"
 MONTHS = {name.lower(): i for i, name in enumerate(
-    ("January","February","March","April","May","June","July","August","September","October","November","December"), 1)}
-DATE_RE = re.compile(r"\b(" + "|".join(MONTHS) + r")\s+(\d{1,2}),?\s+(20\d{2})\b", re.I)
+    ("January", "February", "March", "April", "May", "June",
+     "July", "August", "September", "October", "November", "December"), 1)}
+DATE_PATTERN = r"(?:This\\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\\s+(" + "|".join(MONTHS) + r")\\s+(\\d{1,2}),?\\s+(20\\d{2})"
+MONEY = r"\\$\\s*([\\d,]+)\\s*million\\b"
 
-def _draw_date(text):
-    m = DATE_RE.search(text)
-    if not m:
-        return None
+def _date(month, day, year):
     try:
-        return date(int(m[3]), MONTHS[m[1].lower()], int(m[2])).isoformat()
-    except ValueError:
+        return date(int(year), MONTHS[month.lower()], int(day)).isoformat()
+    except (ValueError, KeyError):
         return None
 
-def _unique(pattern, text):
-    matches = re.findall(pattern, text, re.I)
-    values = {int(v.replace(",", "")) for v in matches}
-    return next(iter(values)) if len(values) == 1 else None
+def _single(matches):
+    unique = set(matches)
+    return next(iter(unique)) if len(unique) == 1 else None
 
 def parse_jackpots(html):
     soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style", "nav", "footer", "header"]):
-        tag.decompose()
-    text = soup.get_text(" ", strip=True)
-    # Restrict extraction to the two game panels. Never use other lotteries'
-    # amounts, past results, or the classic $5M as Gold Ball.
-    max_start = re.search(r"\bLotto Max\b", text, re.I)
-    six_start = re.search(r"\bLotto 6/49\b", text, re.I)
-    if not max_start or not six_start or max_start.end() >= six_start.start():
-        return {"values": {"lotto_max": None, "gold_ball": None, "maxmillions": None},
-                "draw_dates": {}, "errors": ["Game panels missing or reordered"]}
-    max_block = text[max_start.end():six_start.start()]
-    rest = text[six_start.end():]
-    end = re.search(r"\bLotto Poker\b|\bProgressive Jackpot\b|\bLotteries newsletter\b", rest, re.I)
-    gold_block = rest[:end.start()] if end else rest[:400]
-    gold_marker = re.search(r"\bGold Ball\b", gold_block, re.I)
-    gold_amount = gold_block[gold_marker.end():] if gold_marker else ""
-    gold_amount = re.split(r"\bThe Classic\b", gold_amount, maxsplit=1, flags=re.I)[0]
-    maximum = _unique(r"\$\s*([\d,]+)\s*million\b", max_block)
-    count = _unique(r"\b(\d+)\s*Maxmillions\b", max_block)
-    # A missing Maxmillions count is unknown, NOT zero.
-    gold = _unique(r"\$\s*([\d,]+)\s*million\b", gold_amount)
+    for element in soup(["script", "style", "nav", "footer", "header"]):
+        element.decompose()
+    text = " ".join(soup.stripped_strings)
+    text = re.sub(r"\\s+", " ", text)
+
+    # The current homepage has a Lotto Max next-draw card followed by a
+    # Lotto 6/49 next-draw card. Search for the card's date/amount together
+    # rather than relying on the first game name (also present in menus).
+    max_re = re.compile(DATE_PATTERN + r"\\s+" + MONEY +
+        r"\\s+(\\d+)\\s+Maxmillions\\b", re.I)
+    max_matches = max_re.findall(text)
+    # Gold Ball can have an image alt label before its heading.
+    gold_re = re.compile(DATE_PATTERN +
+        r".{0,180}?\\bThe\\s+Gold\\s+Ball\\b\\s+" + MONEY, re.I)
+    gold_matches = gold_re.findall(text)
+
+    maximum = _single([int(m[3].replace(",", "")) for m in max_matches])
+    count = _single([int(m[4]) for m in max_matches])
+    gold = _single([int(m[3].replace(",", "")) for m in gold_matches])
+    max_date = _single([_date(*m[:3]) for m in max_matches])
+    gold_date = _single([_date(*m[:3]) for m in gold_matches])
+
+    # Prevent accidentally accepting a jackpot from an unrelated lottery:
+    # require the corresponding game labels on the same page.
+    if not re.search(r"\\bLotto\\s+Max\\b", text, re.I):
+        maximum = count = max_date = None
+    if not re.search(r"\\bLotto\\s+6/49\\b", text, re.I):
+        gold = gold_date = None
     return {
         "values": {"lotto_max": maximum, "gold_ball": gold, "maxmillions": count},
-        "draw_dates": {"lotto_max": _draw_date(max_block), "gold_ball": _draw_date(gold_block)},
-        "errors": [],
+        "draw_dates": {"lotto_max": max_date, "gold_ball": gold_date},
     }
