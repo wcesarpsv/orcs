@@ -4,7 +4,7 @@ from jackpots_publisher import start_publisher
 st.set_page_config(page_title='OLG Jackpot Monitor', page_icon='🎰', layout='wide')
 worker = start_publisher()
 st.title('OLG Jackpot Monitor')
-st.caption('Valores publicados por este Streamlit para o ESP32-C6. Fonte: OLG (site chinês). Maxmillions fixo em 0 nesta versão.')
+st.caption('Valores publicados por este Streamlit para o ESP32-C6. Fonte: Loto-Québec (em validação). Transmissão somente com os três valores e datas confirmados.')
 if st.button('Atualizar agora'):
     worker.request_refresh()
     st.info('Atualização solicitada. A página será atualizada em alguns segundos.')
