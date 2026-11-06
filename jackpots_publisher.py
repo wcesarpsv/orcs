@@ -5,6 +5,8 @@ on startup/rerun; the worker then refreshes while the process is alive.
 """
 import json
 import os
+import subprocess
+import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone, date
@@ -17,6 +19,24 @@ REFRESH_SECONDS = 120
 VALID_SECONDS = 300
 _workers = {}
 _workers_lock = threading.Lock()
+_browser_install_lock = threading.Lock()
+_browser_install_attempted = False
+
+
+def ensure_chromium_installed():
+    """Install Playwright headless Chromium once per process if absent."""
+    global _browser_install_attempted
+    with _browser_install_lock:
+        if _browser_install_attempted:
+            return
+        _browser_install_attempted = True
+        proc = subprocess.run(
+            [sys.executable, '-m', 'playwright', 'install', 'chromium-headless-shell'],
+            capture_output=True, text=True, timeout=150, check=False,
+        )
+        if proc.returncode:
+            raise RuntimeError('Chromium install failed: ' + (proc.stderr or proc.stdout)[-350:])
+
 
 
 def make_snapshot(html, now=None):
@@ -120,7 +140,13 @@ class Publisher:
                 try:
                     from playwright.sync_api import sync_playwright
                     with sync_playwright() as playwright:
-                        browser = playwright.chromium.launch(headless=True, args=['--no-sandbox'])
+                        try:
+                            browser = playwright.chromium.launch(headless=True, args=['--no-sandbox'])
+                        except Exception as launch_exc:
+                            if 'Executable doesn\'t exist' not in str(launch_exc):
+                                raise
+                            ensure_chromium_installed()
+                            browser = playwright.chromium.launch(headless=True, args=['--no-sandbox'])
                         try:
                             page = browser.new_page(locale='en-CA', viewport={'width': 1280, 'height': 900})
                             page.goto(SOURCE, wait_until='domcontentloaded', timeout=25000)
