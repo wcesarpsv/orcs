@@ -5,8 +5,6 @@ on startup/rerun; the worker then refreshes while the process is alive.
 """
 import json
 import os
-import subprocess
-import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone, date
@@ -19,25 +17,6 @@ REFRESH_SECONDS = 120
 VALID_SECONDS = 300
 _workers = {}
 _workers_lock = threading.Lock()
-_browser_install_lock = threading.Lock()
-_browser_install_attempted = False
-
-
-def ensure_chromium_installed():
-    """Install Playwright headless Chromium once per process if absent."""
-    global _browser_install_attempted
-    with _browser_install_lock:
-        if _browser_install_attempted:
-            return
-        _browser_install_attempted = True
-        proc = subprocess.run(
-            [sys.executable, '-m', 'playwright', 'install', 'chromium-headless-shell'],
-            capture_output=True, text=True, timeout=150, check=False,
-        )
-        if proc.returncode:
-            raise RuntimeError('Chromium install failed: ' + (proc.stderr or proc.stdout)[-350:])
-
-
 
 def make_snapshot(html, now=None):
     now = now or datetime.now(timezone.utc)
@@ -135,38 +114,6 @@ class Publisher:
                     f'gold_ball_in_html={bool(re.search("gold.ball", r.text, re.I))}, '
                     f'maxmillions_in_html={"maxmillions" in r.text.lower()}'
                 )
-                # A Chromium fallback is optional: Streamlit Cloud may not
-                # have the browser binary installed even with playwright pip.
-                try:
-                    from playwright.sync_api import sync_playwright
-                    with sync_playwright() as playwright:
-                        try:
-                            browser = playwright.chromium.launch(headless=True, args=['--no-sandbox'])
-                        except Exception as launch_exc:
-                            if 'Executable doesn\'t exist' not in str(launch_exc):
-                                raise
-                            ensure_chromium_installed()
-                            browser = playwright.chromium.launch(headless=True, args=['--no-sandbox'])
-                        try:
-                            page = browser.new_page(locale='en-CA', viewport={'width': 1280, 'height': 900})
-                            page.goto(SOURCE, wait_until='domcontentloaded', timeout=25000)
-                            page.wait_for_timeout(5000)
-                            rendered = page.content()
-                            browser_result = make_snapshot(rendered)
-                            browser_result['fetch_method'] = 'chromium'
-                            if browser_result['transmit_allowed']:
-                                result = browser_result
-                            else:
-                                result['errors'].append(
-                                    f'Chromium diagnostic: HTML {len(rendered)} bytes, '
-                                    f'visible_text={len(page.locator("body").inner_text())} chars, '
-                                    f'lotto_max={"Lotto Max" in rendered}, '
-                                    f'gold_ball={bool(re.search("gold.ball", rendered, re.I))}'
-                                )
-                        finally:
-                            browser.close()
-                except Exception as exc:
-                    result['errors'].append(f'Chromium unavailable: {type(exc).__name__}: {str(exc)[:180]}')
         except requests.HTTPError as exc:
             code = exc.response.status_code if exc.response is not None else 'unknown'
             result = failure_snapshot(f'Loto-Québec fetch failed: HTTP {code}')
