@@ -84,6 +84,8 @@ class Publisher:
         self.lock = threading.Lock()
         self.wake = threading.Event()
         self.stop_event = threading.Event()
+        self.last_success_at = None
+        self.last_success_method = None
         self.thread = threading.Thread(target=self.run, name='olg-jackpots-publisher', daemon=True)
         # Every process start invalidates a leftover snapshot before fetching.
         atomic_publish(self.path, failure_snapshot('Starting publisher'))
@@ -147,6 +149,11 @@ class Publisher:
         except Exception as exc:
             result = failure_snapshot(f'Loto-Québec fetch failed: {type(exc).__name__}')
         with self.lock:
+            if result.get('transmit_allowed'):
+                self.last_success_at = result['checked_at']
+                self.last_success_method = result.get('fetch_method', 'unknown')
+            result['last_success_at'] = self.last_success_at
+            result['last_success_method'] = self.last_success_method
             atomic_publish(self.path, result)
 
     def run(self):
