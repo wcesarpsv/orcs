@@ -11,7 +11,7 @@ MONTHS = {name.lower(): i for i, name in enumerate(
     ("January", "February", "March", "April", "May", "June",
      "July", "August", "September", "October", "November", "December"), 1)}
 DATE_RE = re.compile(
-    r"\b(?:This\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s+"
+    r"\b(?:(?:This\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)|Tonight|Tomorrow),?\s+"
     r"(" + "|".join(MONTHS) + r")\s+(\d{1,2}),?\s+(20\d{2})\b", re.I
 )
 AMOUNT_RE = re.compile(r"\$\s*([\d,]+)\s*million\b", re.I)
