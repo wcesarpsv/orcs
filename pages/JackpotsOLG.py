@@ -27,3 +27,38 @@ def show_snapshot():
         st.json(result)
 show_snapshot()
 
+
+# On-demand read-only HTML inspection. Never publishes or changes C6 data.
+with st.expander('Diagnóstico do HTML bruto (requests)', expanded=False):
+    st.caption('Busca independente para investigar o parser. Não modifica o JSON do C6.')
+    if st.button('Inspecionar HTML recebido', key='inspect_loto_html'):
+        import requests
+        import re
+        from bs4 import BeautifulSoup
+        from lotoquebec_parser import SOURCE, parse_jackpots
+        try:
+            response = requests.get(SOURCE, headers={
+                'User-Agent': 'Mozilla/5.0',
+                'Accept-Language': 'en-CA,en;q=0.9',
+            }, timeout=(8, 20))
+            response.raise_for_status()
+            response.encoding = 'utf-8'
+            raw = response.text
+            soup = BeautifulSoup(raw, 'html.parser')
+            for node in soup(['script', 'style', 'nav', 'footer', 'header']):
+                node.decompose()
+            visible = re.sub(r'\\s+', ' ', ' '.join(soup.stripped_strings))
+            st.write('HTTP:', response.status_code, '| Bytes:', len(response.content),
+                     '| Caracteres visíveis:', len(visible))
+            st.write('Parser atual:')
+            st.json(parse_jackpots(raw))
+            st.text_area('Texto visível (até 6000 caracteres)', visible[:6000], height=220)
+            for term in ('Lotto Max', 'Maxmillions', 'Gold Ball', 'Lotto 6/49'):
+                st.markdown('**Trechos para: ' + term + '**')
+                matches = list(re.finditer(re.escape(term), raw, re.I))
+                st.caption(str(len(matches)) + ' ocorrência(s) no HTML bruto; até 3 exemplos.')
+                for match in matches[:3]:
+                    fragment = raw[max(0, match.start()-350):match.end()+550]
+                    st.code(fragment, language='html')
+        except Exception as exc:
+            st.error('Falha ao inspecionar HTML: ' + type(exc).__name__ + ': ' + str(exc)[:300])
