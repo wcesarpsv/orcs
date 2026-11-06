@@ -53,6 +53,16 @@ with st.expander('Diagnóstico do HTML bruto (requests)', expanded=False):
             st.write('Parser atual:')
             st.json(parse_jackpots(raw))
             st.text_area('Texto visível (até 6000 caracteres)', visible[:6000], height=220)
+            st.markdown('**Trechos do texto visível usados pelo parser**')
+            for term in ('Maxmillions', 'The Gold Ball', 'Lotto Max', 'Lotto 6/49'):
+                hits = list(re.finditer(re.escape(term), visible, re.I))
+                st.write(term + ': ' + str(len(hits)) + ' ocorrência(s)')
+                for hit in hits[:4]:
+                    st.code(visible[max(0, hit.start()-260):min(len(visible), hit.end()+320)], language='text')
+            from lotoquebec_parser import DATE_RE, AMOUNT_RE, COUNT_RE
+            st.write('Datas reconhecidas:', [m.group(0) for m in DATE_RE.finditer(visible)][:12])
+            st.write('Valores em milhões reconhecidos:', AMOUNT_RE.findall(visible)[:12])
+            st.write('Maxmillions reconhecidos:', COUNT_RE.findall(visible)[:12])
             for term in ('Lotto Max', 'Maxmillions', 'Gold Ball', 'Lotto 6/49'):
                 st.markdown('**Trechos para: ' + term + '**')
                 matches = list(re.finditer(re.escape(term), raw, re.I))
