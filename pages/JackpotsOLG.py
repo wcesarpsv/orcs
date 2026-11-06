@@ -44,6 +44,13 @@ with st.expander('Diagnóstico do HTML bruto (requests)', expanded=False):
             response.raise_for_status()
             response.encoding = 'utf-8'
             raw = response.text
+            st.download_button(
+                'Baixar HTML recebido (.html)',
+                data=response.content,
+                file_name='lotoquebec_requests.html',
+                mime='text/html',
+                key='download_loto_html',
+            )
             soup = BeautifulSoup(raw, 'html.parser')
             for node in soup(['script', 'style', 'nav', 'footer', 'header']):
                 node.decompose()
