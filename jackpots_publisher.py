@@ -9,6 +9,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
+import shutil
 from zoneinfo import ZoneInfo
 import requests
 from lotoquebec_parser import parse_jackpots, SOURCE
@@ -122,7 +123,11 @@ class Publisher:
                 try:
                     from playwright.sync_api import sync_playwright
                     with sync_playwright() as playwright:
-                        browser = playwright.chromium.launch(headless=True, args=['--no-sandbox'])
+                        system_chromium = shutil.which('chromium') or shutil.which('chromium-browser')
+                        launch_options = {'headless': True, 'args': ['--no-sandbox']}
+                        if system_chromium:
+                            launch_options['executable_path'] = system_chromium
+                        browser = playwright.chromium.launch(**launch_options)
                         try:
                             page = browser.new_page(locale='en-CA', viewport={'width': 1280, 'height': 900})
                             page.goto(SOURCE, wait_until='domcontentloaded', timeout=25000)
