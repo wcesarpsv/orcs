@@ -9,7 +9,6 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
-import shutil
 from zoneinfo import ZoneInfo
 import requests
 from lotoquebec_parser import parse_jackpots, SOURCE
@@ -85,8 +84,6 @@ class Publisher:
         self.lock = threading.Lock()
         self.wake = threading.Event()
         self.stop_event = threading.Event()
-        self.last_success_at = None
-        self.last_success_method = None
         self.thread = threading.Thread(target=self.run, name='olg-jackpots-publisher', daemon=True)
         # Every process start invalidates a leftover snapshot before fetching.
         atomic_publish(self.path, failure_snapshot('Starting publisher'))
@@ -123,11 +120,7 @@ class Publisher:
                 try:
                     from playwright.sync_api import sync_playwright
                     with sync_playwright() as playwright:
-                        system_chromium = shutil.which('chromium') or shutil.which('chromium-browser')
-                        launch_options = {'headless': True, 'args': ['--no-sandbox']}
-                        if system_chromium:
-                            launch_options['executable_path'] = system_chromium
-                        browser = playwright.chromium.launch(**launch_options)
+                        browser = playwright.chromium.launch(headless=True, args=['--no-sandbox'])
                         try:
                             page = browser.new_page(locale='en-CA', viewport={'width': 1280, 'height': 900})
                             page.goto(SOURCE, wait_until='domcontentloaded', timeout=25000)
@@ -154,11 +147,6 @@ class Publisher:
         except Exception as exc:
             result = failure_snapshot(f'Loto-Québec fetch failed: {type(exc).__name__}')
         with self.lock:
-            if result.get('transmit_allowed'):
-                self.last_success_at = result['checked_at']
-                self.last_success_method = result.get('fetch_method', 'unknown')
-            result['last_success_at'] = self.last_success_at
-            result['last_success_method'] = self.last_success_method
             atomic_publish(self.path, result)
 
     def run(self):
