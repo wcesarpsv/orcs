@@ -4,7 +4,7 @@ from jackpots_publisher import start_publisher
 st.set_page_config(page_title='OLG Jackpot Monitor', page_icon='🎰', layout='wide')
 worker = start_publisher()
 st.title('OLG Jackpot Monitor')
-st.caption('Valores publicados por este Streamlit para o ESP32-C6. Fonte: Loto-Québec. Transmissão somente com os três valores e datas confirmados.')
+st.caption('Valores publicados por este Streamlit para o ESP32-C6. Fonte: Loto-Québec (em validação). Transmissão somente com os três valores e datas confirmados.')
 if st.button('Atualizar agora'):
     worker.request_refresh()
     st.info('Atualização solicitada. A página será atualizada em alguns segundos.')
@@ -18,15 +18,6 @@ def show_snapshot():
         ('Lotto Max (M CAD)', 'Gold Ball (M CAD)', 'Maxmillions (qtd.)')):
         col.metric(label, values.get(key) if values.get(key) is not None else 'Indisponível')
     st.write('Status:', result['status'], '| Consulta UTC:', result['checked_at'])
-    method = result.get('fetch_method')
-    method_labels = {'requests': 'Requests (HTML direto)', 'chromium': 'Chromium / Playwright (navegador)'}
-    st.write('**Método da última consulta:**', method_labels.get(method, 'Não disponível'))
-    last_success = result.get('last_success_at')
-    if last_success:
-        st.write('**Última atualização bem-sucedida (UTC):**', last_success)
-        st.caption('Método utilizado: ' + method_labels.get(result.get('last_success_method'), 'Não disponível'))
-    else:
-        st.write('**Última atualização bem-sucedida:** Nenhuma desde o início do processo')
     if not result['transmit_allowed']:
         st.warning('Dados indisponíveis, incompletos ou vencidos. Envio dos valores publicado como bloqueado.')
     for error in result.get('errors', []):
