@@ -48,11 +48,20 @@ def parse_jackpots(html):
     max_candidates = []
     gold_candidates = []
     for draw_match, block in blocks:
-        max_counts = COUNT_RE.findall(block)
-        if max_counts:
-            amounts = AMOUNT_RE.findall(block[:COUNT_RE.search(block).start()])
-            if amounts:
-                max_candidates.append((_date_from_match(draw_match), int(amounts[-1].replace(",", "")), int(max_counts[0])))
+        # Gold Ball is the other draw card; never mistake its prize for Lotto Max.
+        is_gold_card = bool(re.search(r"\\bThe\\s+Gold\\s+Ball\\b", block, re.I))
+        if not is_gold_card:
+            amounts = AMOUNT_RE.findall(block)
+            max_counts = COUNT_RE.findall(block)
+            # Without Maxmillions, Loto-Québec shows e.g. "10 x $100,000".
+            # This is NOT a Maxmillions count. Only a complete, dated
+            # Lotto Max card can establish a zero count.
+            if len(amounts) == 1 and len(set(max_counts)) <= 1:
+                max_candidates.append((
+                    _date_from_match(draw_match),
+                    int(amounts[0].replace(",", "")),
+                    int(max_counts[0]) if max_counts else 0,
+                ))
         gold_label = re.search(r"\bThe\s+Gold\s+Ball\b", block, re.I)
         if gold_label:
             tail = block[gold_label.end():]
