@@ -106,12 +106,14 @@ def polish(client, text):
     return (response.choices[0].message.content or text).strip()
 
 
-def build_report(kind, place, rdl, details, units, extras, key_collected=None, key_reason=""):
+def build_report(kind, place, rdl, details, units, extras, key_collected=None, key_reason="", key_return_destination=None):
     if kind == "PM":
-        if key_collected not in ("Yes", "No"):
-            raise ValueError("Select whether the SST key was collected.")
+        if key_collected not in ("Yes", "No", "Return SST Key"):
+            raise ValueError("Select an SST key status.")
         if key_collected == "No" and not key_reason.strip():
             raise ValueError("Provide the reason the SST key could not be collected.")
+        if key_collected == "Return SST Key" and key_return_destination not in ("Office", "Warehouse"):
+            raise ValueError("Select where the SST key will be returned.")
     reference = re.sub(r"^RDL\s*:\s*", "", rdl, flags=re.I).strip()
     heading = {
         "PM": "PM completed", "INSTALLATION": "WJS Large Carmanah - Installation",
@@ -147,6 +149,9 @@ def build_report(kind, place, rdl, details, units, extras, key_collected=None, k
     if kind == "PM":
         if key_collected == "Yes":
             key_text = "SST's key was successfully collected and will be returned to the office."
+        elif key_collected == "Return SST Key":
+            key_text = ("The SST key was collected during a previous visit and will be returned "
+                        f"to the {key_return_destination.lower()}.")
         else:
             key_text = ("SST's key could not be collected for return to the office.\n\n"
                         + "Reason: " + key_reason.strip()
@@ -261,7 +266,7 @@ for title, upload in [("Call screenshot", screenshot)] + [(t, photos[k]) for k, 
 
 key_collected = None
 if kind == "PM":
-    key_collected = st.radio("SST’s Key Collected", ["Yes", "No"], index=None,
+    key_collected = st.radio("SST Key Status", ["Yes", "No", "Return SST Key"], index=None,
                              horizontal=True, key="pm_key_collected")
 
 with st.form("report_form"):
@@ -276,6 +281,10 @@ with st.form("report_form"):
         sn = st.text_input("S/N (Serial)", key=kind + unit_key + "_sn")
         manual_units.append({"key": unit_key, "title": title, "item": item.strip(), "pn": pn.strip(), "sn": sn.strip()})
     details = st.text_area("📝 Details — issue, troubleshooting steps and actions taken", height=150)
+    key_return_destination = None
+    if kind == "PM" and key_collected == "Return SST Key":
+        key_return_destination = st.radio("Return destination", ["Office", "Warehouse"],
+                                          index=None, horizontal=True, key="pm_key_return_destination")
     key_reason = ""
     if kind == "PM" and key_collected == "No":
         key_reason = st.text_area(
@@ -290,7 +299,10 @@ with st.form("report_form"):
 
 if submitted and kind == "PM":
     if key_collected is None:
-        st.warning("Select Yes or No for SST’s Key Collected.")
+        st.warning("Select an SST key status.")
+        submitted = False
+    elif key_collected == "Return SST Key" and key_return_destination is None:
+        st.warning("Select Office or Warehouse as the return destination.")
         submitted = False
     elif key_collected == "No" and not key_reason.strip():
         st.warning("Enter the reason the key could not be collected for return to the office.")
@@ -348,7 +360,8 @@ if submitted:
                     except Exception:
                         st.warning("AI observation polish failed. Your original reason was preserved.")
                 materials = extras + [line.strip() for line in custom.splitlines() if line.strip()]
-                sections = build_report(kind, place_final, rdl_final, final_details, units, materials, key_collected, final_key_reason)
+                sections = build_report(kind, place_final, rdl_final, final_details, units, materials,
+                                        key_collected, final_key_reason, key_return_destination)
                 st.session_state["generated_report"] = {"sections": sections, "kind": kind}
                 try:
                     st.session_state["generated_report"]["pdf"] = make_pdf(sections)
