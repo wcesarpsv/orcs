@@ -1,0 +1,8 @@
+{
+  "appId": "ca.englishcoach.learning",
+  "appName": "English Coach",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}
