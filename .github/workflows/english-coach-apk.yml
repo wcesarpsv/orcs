@@ -21,7 +21,9 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Verify Android SDK
-        run: test -d "$ANDROID_HOME" && echo "Android SDK: $ANDROID_HOME"
+        run: |
+          test -d "$ANDROID_HOME"
+          echo "Android SDK: $ANDROID_HOME"
       - run: npm install
       - run: npm run android:init
       - name: Build debug APK
