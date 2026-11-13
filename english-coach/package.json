@@ -1,15 +1,16 @@
 {
   "name": "english-coach",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "prepare:web": "mkdir -p www && cp index.html www/index.html",
-    "android:init": "npm run prepare:web && npx cap add android",
+    "android:init": "npm run prepare:web && npx cap add android && node configure-android.cjs",
     "android:sync": "npm run prepare:web && npx cap sync android"
   },
   "dependencies": {
-    "@capacitor/core": "^6.2.0",
-    "@capacitor/android": "^6.2.0"
+    "@capacitor-community/text-to-speech": "^5.1.0",
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.2.0"
