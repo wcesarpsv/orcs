@@ -1,9 +1,9 @@
 {
   "name": "english-coach",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "scripts": {
-    "prepare:web": "mkdir -p www && cp index.html www/index.html",
+    "prepare:web": "mkdir -p www && cp index.html CMUDICT-LICENSE.txt www/",
     "android:init": "npm run prepare:web && npx cap add android && node configure-android.cjs",
     "android:sync": "npm run prepare:web && npx cap sync android"
   },
