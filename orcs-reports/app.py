@@ -304,3 +304,25 @@ def sst_save():
     except PermissionError as e:return jsonify(error=str(e)),401
     except ValueError as e:return jsonify(error=str(e)),400
     except Exception:return jsonify(error='Could not save this PM. Retry; your form is still available.'),502
+
+
+@app.get('/account')
+def sst_account():
+    return render_template('account.html')
+
+@app.post('/api/sst-pm/password')
+def sst_set_password():
+    import requests as http
+    url=os.getenv('SUPABASE_URL','').rstrip('/');key=os.getenv('SUPABASE_PUBLISHABLE_KEY','')
+    if not url or not key:return jsonify(error='Account service is not configured.'),503
+    auth=request.headers.get('Authorization','')
+    if not auth.startswith('Bearer ') or not auth[7:].strip():return jsonify(error='Open a valid invitation link to continue.'),401
+    data=request.get_json(silent=True)
+    password=data.get('password') if isinstance(data,dict) else None
+    if not isinstance(password,str) or not 12 <= len(password) <= 128:return jsonify(error='Use a password containing 12 to 128 characters.'),400
+    try:
+        r=http.put(url+'/auth/v1/user',headers={'apikey':key,'Authorization':auth,'Content-Type':'application/json'},json={'password':password},timeout=25)
+        if r.status_code in (401,403):return jsonify(error='This invitation has expired. Request a new invitation.'),401
+        if not r.ok:return jsonify(error='Could not set your password. Try a different password or request a new invitation.'),400
+        return jsonify(ok=True)
+    except Exception:return jsonify(error='Could not reach the account service. Please retry.'),502
