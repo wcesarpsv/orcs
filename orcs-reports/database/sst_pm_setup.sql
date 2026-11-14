@@ -15,6 +15,7 @@ create table if not exists public.orcs_sst_pm_visits (
   created_at timestamptz not null default now(),
   unique(sst_id,revision)
 );
+create index if not exists orcs_sst_pm_visits_created_by_idx on public.orcs_sst_pm_visits(created_by);
 alter table public.orcs_sst_members enable row level security;
 alter table public.orcs_sst_pm_visits enable row level security;
 revoke all on public.orcs_sst_members, public.orcs_sst_pm_visits from anon, authenticated;
