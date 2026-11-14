@@ -146,3 +146,41 @@ def pdf():
     except Exception:
         app.logger.warning('PDF generation failed')
         return jsonify(error='Could not export this PDF. Generate the report again or download TXT.'),400
+
+@app.post('/api/expenses/extract')
+def expense_extract():
+    from expenses import extract_receipt_information, extraction_to_row
+    if not os.getenv('OPENAI_API_KEY'):
+        return jsonify(error='AI is not configured. Add expenses manually.'), 503
+    upload=request.files.get('receipt')
+    try:
+        image=normalize(upload)
+        if not image:return jsonify(error='Choose a receipt photo.'),400
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        return jsonify(error='Unreadable receipt photo. Choose another image.'),400
+    try:
+        extracted=extract_receipt_information(OpenAI(timeout=60,max_retries=0),image,'receipt','image/jpeg')
+        row=extraction_to_row((upload.filename or 'Receipt')[:200],extracted)
+        row['Currency']=extracted['currency']
+        return jsonify(row=row)
+    except Exception:
+        app.logger.warning('Expense receipt extraction failed')
+        return jsonify(error='Could not read this receipt. Retry or add it manually.'),502
+
+@app.post('/api/expenses/report')
+def expense_report():
+    from expenses import prepare_payload, expense_sections, expense_html, generate_expense_word_report
+    data=request.get_json(silent=True)
+    try:
+        df,summary,settings=prepare_payload(data)
+    except (ValueError,TypeError,KeyError) as exc:
+        return jsonify(error=str(exc)),400
+    format=data.get('format','preview')
+    if format=='docx':
+        result=generate_expense_word_report(settings['recipient'],df,summary,settings['currency'],settings['closing'],settings['include_excluded'])
+        return send_file(BytesIO(result),mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',as_attachment=True,download_name='expense_report.docx')
+    sections=expense_sections(df,summary,settings)
+    if format=='pdf':
+        return send_file(BytesIO(make_pdf(sections)),mimetype='application/pdf',as_attachment=True,download_name='expense_report.pdf')
+    if format!='preview':return jsonify(error='Unknown export format.'),400
+    return jsonify(html=expense_html(df,summary,settings),plain='\n\n'.join(s['text'] for s in sections),sections=sections,filename='expense_report',warnings=[],total=round(float(df['Reimbursable Amount'].sum()),2),excluded=round(float(df['Excluded Amount'].sum()),2),count=int((df['Reimbursable Amount']>0).sum()))
