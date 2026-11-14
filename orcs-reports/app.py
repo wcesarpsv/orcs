@@ -184,3 +184,25 @@ def expense_report():
         return send_file(BytesIO(make_pdf(sections)),mimetype='application/pdf',as_attachment=True,download_name='expense_report.pdf')
     if format!='preview':return jsonify(error='Unknown export format.'),400
     return jsonify(html=expense_html(df,summary,settings),plain='\n\n'.join(s['text'] for s in sections),sections=sections,filename='expense_report',warnings=[],total=round(float(df['Reimbursable Amount'].sum()),2),excluded=round(float(df['Excluded Amount'].sum()),2),count=int((df['Reimbursable Amount']>0).sum()))
+
+@app.get('/jackpots')
+@app.get('/JackpotsOLG')
+def jackpot_page():
+    return render_template('index.html',materials=MATERIALS,ai_ready=bool(os.getenv('OPENAI_API_KEY')),initial_tab='jackpots')
+
+@app.get('/api/jackpots')
+@app.get('/api/jackpots/current.json')
+@app.get('/static/jackpots_current.json')
+def jackpot_json():
+    from jackpots import current_snapshot
+    response=jsonify(current_snapshot())
+    response.headers['Cache-Control']='no-store, max-age=0'
+    return response
+
+@app.get('/api/jackpots/diagnostics')
+def jackpot_diagnostics():
+    from jackpots import diagnostics
+    try:return jsonify(diagnostics())
+    except Exception:
+        app.logger.warning('Jackpot source inspection failed')
+        return jsonify(error='Could not inspect the source HTML. Try again later.'),502
