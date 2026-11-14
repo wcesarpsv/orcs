@@ -326,3 +326,18 @@ def sst_set_password():
         if not r.ok:return jsonify(error='Could not set your password. Try a different password or request a new invitation.'),400
         return jsonify(ok=True)
     except Exception:return jsonify(error='Could not reach the account service. Please retry.'),502
+
+@app.post('/api/sst-pm/recovery')
+def sst_recovery():
+    import requests as http
+    url=os.getenv('SUPABASE_URL','').rstrip('/');key=os.getenv('SUPABASE_PUBLISHABLE_KEY','')
+    if not url or not key:return jsonify(error='Account service is not configured.'),503
+    data=request.get_json(silent=True)
+    email=data.get('email','') if isinstance(data,dict) else ''
+    if not isinstance(email,str) or len(email)>254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email.strip()):return jsonify(error='Enter your invited email address.'),400
+    try:
+        r=http.post(url+'/auth/v1/recover',headers={'apikey':key,'Content-Type':'application/json'},json={'email':email.strip()},timeout=25)
+        if r.status_code==429:return jsonify(error='Please wait a minute before requesting another email.'),429
+        if not r.ok:return jsonify(error='Could not send the email. Please retry later.'),502
+        return jsonify(ok=True)
+    except Exception:return jsonify(error='Could not reach the account service. Please retry.'),502
