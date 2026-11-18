@@ -116,7 +116,7 @@ def generate():
     details = f.get('details','').strip()
     template = f.get('wjs_template','').strip() if kind == 'INSTALLATION' else ''
     if kind == 'INSTALLATION' and (not template or len(template)>30000):
-        return jsonify(error='Enter a WJS Install report template (maximum 30,000 characters).'),400)
+        return jsonify(error='Enter a WJS Install report template (maximum 30,000 characters).'),400
     if f.get('use_ai') == 'on' and kind != 'INSTALLATION':
         if client:
             for field in ('details','reason'):
