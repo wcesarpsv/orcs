@@ -8,7 +8,44 @@ form.addEventListener('change',e=>{if(e.target.type!=='file')return;const img=e.
 async function optimize(file){const img=new Image(),url=URL.createObjectURL(file);try{img.src=url;await img.decode();const scale=Math.min(1,1600/img.naturalWidth,1600/img.naturalHeight),canvas=document.createElement('canvas');canvas.width=Math.round(img.naturalWidth*scale);canvas.height=Math.round(img.naturalHeight*scale);const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.8));if(!blob)throw Error('Could not prepare photo.');return blob}finally{URL.revokeObjectURL(url)}}
 function fillExtracted(d){if(!d)return;for(const name of ['place','rdl'])if(d[name]&&!form.elements[name].value.trim())form.elements[name].value=d[name];for(const u of d.units||[])for(const field of ['item','pn','sn']){const input=form.elements[u.key+'_'+field];if(input&&!input.value.trim())input.value=u[field]||''}}
 function status(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error)}
-form.onsubmit=async e=>{e.preventDefault();if($('sst-scan-dialog')?.open)return;if($('kind').value==='SST PM'){await generateSstPm();return}if($('kind').value==='EXPENSE REPORT'){await generateExpenses();return}if(busy)return;if($('kind').value==='INSTALLATION'){for(const name of ['store_front_photo','wjs_serial_photo','call_completion_photo'])if(!form.elements[name]?.files.length){status('Required photo missing: '+name.replaceAll('_',' '),true);return}if($('wjs-source').value==='inventory'&&!selectedWjs){status('Select a WJS from My Inventory or choose Manual entry.',true);return}}busy=true;$('generate').disabled=true;status('Preparing photos…');try{const data=new FormData(form);for(const [name,value] of [...data.entries()])if(value instanceof File){if(!value.size){data.delete(name);continue}const optimized=await optimize(value);if(name==='additional_photos'){data.delete(name);data.append(name,optimized,value.name+'.jpg')}else data.set(name,optimized,name+'.jpg')}let total=0;for(const v of data.values())total+=v instanceof Blob?v.size:new Blob([v]).size;if(total>18000000)throw Error('Photos are still too large. Crop the labels and try again.');status('Reading photos and preparing your report…');const r=await fetch('/api/generate',{method:'POST',body:data});if(!(r.headers.get('content-type')||'').includes('application/json'))throw Error('Server request failed. Please try again.');const result=await r.json();fillExtracted(result.extracted);if(!r.ok)throw Error([result.error,...(result.warnings||[])].join(' '));generated=result;$('confirm-wjs-install').hidden=$('kind').value!=='INSTALLATION'||!selectedWjs;$('word').hidden=true;$('sst-excel').hidden=true;$('sst-labels').hidden=true;$('report').innerHTML=result.html;$('warnings').textContent=(result.warnings||[]).join(' ');$('empty').hidden=true;$('result').hidden=false;$('report-badge').textContent='Ready for review';$('copy-status').textContent='';status('Report generated. Review serials and service statements.');if(window.innerWidth<850)$('result').scrollIntoView({behavior:'smooth',block:'start'})}catch(e){status(e.message||'Unable to generate report.',true)}finally{busy=false;$('generate').disabled=false}};
+form.onsubmit=async e=>{e.preventDefault();if($('sst-scan-dialog')?.open)return;if($('kind').value==='SST PM'){await generateSstPm();return}if($('kind').value==='EXPENSE REPORT'){await generateExpenses();return}if(busy)return;if($('kind').value==='INSTALLATION'){for(const name of ['store_front_photo','wjs_serial_photo','call_completion_photo'])if(!form.elements[name]?.files.length){status('Required photo missing: '+name.replaceAll('_',' '),true);return}if($('wjs-source').value==='inventory'&&!selectedWjs){status('Select a WJS from My Inventory or choose Manual entry.',true);return}}busy=true;$('generate').disabled=true;status('Preparing photos…');try{const data=new FormData(form);for(const [name,value] of [...data.entries()])if(value instanceof File){if(!value.size){data.delete(name);continue}const optimized=await optimize(value);if(name==='additional_photos'){data.delete(name);data.append(name,optimized,value.name+'.jpg')}else data.set(name,optimized,name+'.jpg')}let total=0;for(const v of data.values())total+=v instanceof Blob?v.size:new Blob([v]).size;if(total>18000000)throw Error('Photos are still too large. Crop the labels and try again.');status('Reading photos and preparing your report…');const r=await fetch('/api/generate',{method:'POST',body:data});if(!(r.headers.get('content-type')||'').includes('application/json'))throw Error('Server request failed. Please try again.');const result=await r.json();fillExtracted(result.extracted);if(!r.ok)throw Error([result.error,...(result.warnings||[])].join(' '));generated=result;setupFinalEditor();$('confirm-wjs-install').hidden=$('kind').value!=='INSTALLATION'||!selectedWjs;$('word').hidden=true;$('sst-excel').hidden=true;$('sst-labels').hidden=true;$('report').innerHTML=result.html;$('warnings').textContent=(result.warnings||[]).join(' ');$('empty').hidden=true;$('result').hidden=false;$('report-badge').textContent='Ready for review';$('copy-status').textContent='';status('Report generated. Review serials and service statements.');if(window.innerWidth<850)$('result').scrollIntoView({behavior:'smooth',block:'start'})}catch(e){status(e.message||'Unable to generate report.',true)}finally{busy=false;$('generate').disabled=false}};
+
+const finalEditor=$('final-editor'),finalText=$('final-report-text');
+let editableSectionIndices=[];
+function setupFinalEditor(){
+  const enabled=$('kind').value==='INSTALLATION';
+  finalEditor.hidden=!enabled;
+  if(!enabled)return;
+  editableSectionIndices=generated.sections.map((s,i)=>!s.image?i:-1).filter(i=>i>=0);
+  const original=editableSectionIndices.map(i=>generated.sections[i].text).join('\\n\\n');
+  const draftKey='orcs_wjs_final_draft';
+  const fingerprint=JSON.stringify({serial:form.elements.unit_sn?.value,rdl:form.elements.rdl?.value,original});
+  let saved=null;try{saved=JSON.parse(sessionStorage.getItem(draftKey)||'null')}catch{}
+  finalText.value=saved?.fingerprint===fingerprint?saved.text:original;
+  finalText.dataset.fingerprint=fingerprint;
+  applyFinalEdits();
+}
+function applyFinalEdits(){
+  if(!generated||finalEditor.hidden)return;
+  const edited=finalText.value;
+  const first=editableSectionIndices[0];
+  if(first===undefined)return;
+  for(const i of editableSectionIndices)generated.sections[i].text=i===first?edited:'';
+  generated.plain=generated.sections.map(s=>s.text).filter(Boolean).join('\\n\\n');
+  const preview=$('report');
+  preview.replaceChildren();
+  for(const section of generated.sections){
+    if(section.text){const p=document.createElement('p');p.style.whiteSpace='pre-wrap';p.textContent=section.text;preview.append(p)}
+    if(section.image){const img=document.createElement('img');img.src='data:image/jpeg;base64,'+section.image;img.alt=section.text||'Report photo';img.style.maxWidth='100%';preview.append(img)}
+  }
+  generated.html=preview.innerHTML;
+  $('report-badge').textContent='Ready for review / editable';
+}
+finalText.addEventListener('input',()=>{
+  try{sessionStorage.setItem('orcs_wjs_final_draft',JSON.stringify({fingerprint:finalText.dataset.fingerprint,text:finalText.value}))}catch{}
+  applyFinalEdits();
+});
+
 function selectReport(){const range=document.createRange();range.selectNodeContents($('report'));const s=window.getSelection();s.removeAllRanges();s.addRange(range)}
 function legacyCopy(rich){const handler=e=>{e.clipboardData.setData('text/plain',generated.plain);if(rich)e.clipboardData.setData('text/html',generated.html);e.preventDefault()};document.addEventListener('copy',handler);selectReport();try{return document.execCommand('copy')}finally{document.removeEventListener('copy',handler)}}
 $('copy-rich').onclick=async()=>{if(!generated)return;try{await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([generated.html],{type:'text/html'}),'text/plain':new Blob([generated.plain],{type:'text/plain'})})]);$('copy-status').textContent='Formatted report copied. Check photos after pasting.'}catch{$('copy-status').textContent=legacyCopy(true)?'Formatted copy requested. Check photos after pasting.':'Report selected. Copy manually or download PDF.'}};
