@@ -10,7 +10,7 @@ from openai import OpenAI
 from reports import build_report, report_html, make_pdf, polish, data_url
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 4_000_000
+app.config['MAX_CONTENT_LENGTH'] = 20_000_000
 MATERIALS = ['CAT5 Network Cable: L63', 'Power Extension: L38A', 'Power Supply: L64', 'Power Cord: L1', 'Transceiver: L61', 'Transceiver Power: L62', 'Power Bar: L38', 'Steel Cable: L48', 'Hanging Chain: L46']
 TITLES = {'PM': [], 'INSTALLATION': [('unit', 'WJS Info')], 'DEINSTALLATION': [('unit', 'WJS Info')], 'BREAKFIX WJS': [('old', 'Old WJS'), ('new', 'New WJS')]}
 
@@ -73,6 +73,12 @@ def generate():
         units = [dict(key=k, title=t, item=f.get(k+'_item', '').strip(), pn=f.get(k+'_pn', '').strip(), sn=f.get(k+'_sn', '').strip(), image=normalize(request.files.get(k+'_photo'))) for k,t in TITLES[kind]]
     except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
         return jsonify(error='One of the photos is unreadable. Replace it and try again.'), 400
+    if kind == 'INSTALLATION':
+        for field, label in [('store_front_photo','Store Front View'),('wjs_serial_photo','WJS Serial Number'),('call_completion_photo','Call Completion')]:
+            if not request.files.get(field) or not request.files[field].filename:
+                return jsonify(error='Required photo missing: '+label), 400
+        if not units[0]['sn']:
+            return jsonify(error='Enter or select the WJS serial number.'), 400
     warnings = []
     client = OpenAI(timeout=40, max_retries=0) if os.getenv('OPENAI_API_KEY') else None
     place, rdl = f.get('place', '').strip(), f.get('rdl', '').strip()
@@ -123,6 +129,15 @@ def generate():
             warnings.append('AI polish is unavailable; original notes were preserved.')
     extras = [m for m in f.getlist('materials') if m in MATERIALS]+[x.strip() for x in f.get('custom','').splitlines() if x.strip()]
     sections = build_report(kind,place,rdl,details,units,extras,key,reason,destination)
+    if kind == 'INSTALLATION':
+        try:
+            photos = [('Store Front View', normalize(request.files.get('store_front_photo'))), ('WJS Serial Number', normalize(request.files.get('wjs_serial_photo'))), ('Call Completion', normalize(request.files.get('call_completion_photo')))]
+            photos += [('Additional Photo '+str(i+1), normalize(upload)) for i,upload in enumerate(request.files.getlist('additional_photos')) if upload and upload.filename]
+            if any(not img for _,img in photos):
+                return jsonify(error='An installation photo could not be read.'), 400
+            sections.extend(dict(text=label,image=img) for label,img in photos)
+        except (UnidentifiedImageError,OSError,ValueError,Image.DecompressionBombError):
+            return jsonify(error='An installation photo is unreadable.'), 400
     # Encode photographs once for both the preview and PDF download request.
     serializable = [dict(text=s['text'], image=base64.b64encode(s['image']).decode() if s.get('image') else None) for s in sections]
     return jsonify(html=report_html(sections), plain='\n\n'.join(s['text'] for s in sections), sections=serializable, warnings=warnings, extracted=extracted, filename=kind.lower().replace(' ','_')+'_report')
