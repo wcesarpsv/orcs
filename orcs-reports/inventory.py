@@ -1,5 +1,6 @@
 """Technician inventory. Serial catalog ported from RouteDeskFlow bd602df, app/page.tsx."""
 import re
+import os
 
 RULES = {
     'PIN PAD': (r'P[0-9]{7}', 'P followed by 7 digits'),
@@ -43,7 +44,7 @@ def register_routes(app, cloud):
     from uuid import UUID
     @app.get('/inventory')
     def inventory_page():
-        return render_template('index.html',materials=app.config['INVENTORY_MATERIALS'],ai_ready=False,initial_tab='inventory')
+        return render_template('index.html',materials=app.config['INVENTORY_MATERIALS'],ai_ready=bool(os.getenv('OPENAI_API_KEY')),initial_tab='inventory')
 
     @app.get('/api/inventory/catalog')
     def inventory_catalog():
