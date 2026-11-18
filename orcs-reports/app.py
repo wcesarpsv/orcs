@@ -137,9 +137,9 @@ def generate():
         template = re.sub(r'\\[Serial Number\\]',lambda _:units[0]['sn'],template,flags=re.I)
         template = re.sub(r'\\[Additional observations\\]',lambda _:details,template,flags=re.I)
         if details and '[Additional observations]' not in f.get('wjs_template','') and details not in template:
-            template += '\\n\\nAdditional observations:\\n'+details
+            template += '\n\nAdditional observations:\\n'+details
         if extras:
-            template += '\\n\\nAdditional materials used:\\n'+'\\n'.join('- '+x for x in extras)
+            template += '\n\nAdditional materials used:\n'+'\\n'.join('- '+x for x in extras)
         if f.get('use_ai') == 'on' and client:
             try: template = polish(client,template)
             except Exception: warnings.append('AI polish failed; the edited template was preserved.')
