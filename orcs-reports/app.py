@@ -113,7 +113,9 @@ def generate():
     extracted = {'place':place,'rdl':rdl,'units':[{k:u[k] for k in ('key','item','pn','sn')} for u in units]}
     if missing:
         return jsonify(error='Enter or provide readable photos for: '+', '.join(missing), warnings=warnings, extracted=extracted), 400
-    details = f.get('details','').strip()\n    template = f.get('wjs_template','').strip() if kind == 'INSTALLATION' else ''\n    if kind == 'INSTALLATION' and (not template or len(template)>30000):\n        return jsonify(error='Enter a WJS Install report template (maximum 30,000 characters).'),400
+    details = f.get('details','').strip()
+    template = f.get('wjs_template','').strip() if kind == 'INSTALLATION' else ''
+    if kind == 'INSTALLATION' and (not template or len(template)>30000):\n        return jsonify(error='Enter a WJS Install report template (maximum 30,000 characters).'),400
     if f.get('use_ai') == 'on' and kind != 'INSTALLATION':
         if client:
             for field in ('details','reason'):
@@ -128,7 +130,20 @@ def generate():
         else:
             warnings.append('AI polish is unavailable; original notes were preserved.')
     extras = [m for m in f.getlist('materials') if m in MATERIALS]+[x.strip() for x in f.get('custom','').splitlines() if x.strip()]
-    sections = build_report(kind,place,rdl,details,units,extras,key,reason,destination)\n    if kind == 'INSTALLATION':\n        template = re.sub(r'\\[Store Name\\]',lambda _:place,template,flags=re.I)\n        template = re.sub(r'\\[RDL\\]',lambda _:rdl,template,flags=re.I)\n        template = re.sub(r'\\[Serial Number\\]',lambda _:units[0]['sn'],template,flags=re.I)\n        template = re.sub(r'\\[Additional observations\\]',lambda _:details,template,flags=re.I)\n        if details and '[Additional observations]' not in f.get('wjs_template','') and details not in template:\n            template += '\\n\\nAdditional observations:\\n'+details\n        if extras:\n            template += '\\n\\nAdditional materials used:\\n'+'\\n'.join('- '+x for x in extras)\n        if f.get('use_ai') == 'on' and client:\n            try: template = polish(client,template)\n            except Exception: warnings.append('AI polish failed; the edited template was preserved.')\n        sections = [dict(text=template)]
+    sections = build_report(kind,place,rdl,details,units,extras,key,reason,destination)
+    if kind == 'INSTALLATION':
+        template = re.sub(r'\\[Store Name\\]',lambda _:place,template,flags=re.I)
+        template = re.sub(r'\\[RDL\\]',lambda _:rdl,template,flags=re.I)
+        template = re.sub(r'\\[Serial Number\\]',lambda _:units[0]['sn'],template,flags=re.I)
+        template = re.sub(r'\\[Additional observations\\]',lambda _:details,template,flags=re.I)
+        if details and '[Additional observations]' not in f.get('wjs_template','') and details not in template:
+            template += '\\n\\nAdditional observations:\\n'+details
+        if extras:
+            template += '\\n\\nAdditional materials used:\\n'+'\\n'.join('- '+x for x in extras)
+        if f.get('use_ai') == 'on' and client:
+            try: template = polish(client,template)
+            except Exception: warnings.append('AI polish failed; the edited template was preserved.')
+        sections = [dict(text=template)]
     if kind == 'INSTALLATION':
         try:
             photos = [('Store Front View', normalize(request.files.get('store_front_photo'))), ('WJS Serial Number', normalize(request.files.get('wjs_serial_photo'))), ('Call Completion', normalize(request.files.get('call_completion_photo')))]
