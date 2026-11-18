@@ -115,7 +115,8 @@ def generate():
         return jsonify(error='Enter or provide readable photos for: '+', '.join(missing), warnings=warnings, extracted=extracted), 400
     details = f.get('details','').strip()
     template = f.get('wjs_template','').strip() if kind == 'INSTALLATION' else ''
-    if kind == 'INSTALLATION' and (not template or len(template)>30000):\n        return jsonify(error='Enter a WJS Install report template (maximum 30,000 characters).'),400
+    if kind == 'INSTALLATION' and (not template or len(template)>30000):
+        return jsonify(error='Enter a WJS Install report template (maximum 30,000 characters).'),400)
     if f.get('use_ai') == 'on' and kind != 'INSTALLATION':
         if client:
             for field in ('details','reason'):
@@ -132,14 +133,13 @@ def generate():
     extras = [m for m in f.getlist('materials') if m in MATERIALS]+[x.strip() for x in f.get('custom','').splitlines() if x.strip()]
     sections = build_report(kind,place,rdl,details,units,extras,key,reason,destination)
     if kind == 'INSTALLATION':
-        template = re.sub(r'\\[Store Name\\]',lambda _:place,template,flags=re.I)
-        template = re.sub(r'\\[RDL\\]',lambda _:rdl,template,flags=re.I)
-        template = re.sub(r'\\[Serial Number\\]',lambda _:units[0]['sn'],template,flags=re.I)
-        template = re.sub(r'\\[Additional observations\\]',lambda _:details,template,flags=re.I)
+        replacements = {'[Store Name]':place, '[RDL]':rdl, '[Serial Number]':units[0]['sn'], '[Additional observations]':details}
+        for marker, value in replacements.items():
+            template = re.sub(re.escape(marker),lambda match, value=value:value,template,flags=re.I)
         if details and '[Additional observations]' not in f.get('wjs_template','') and details not in template:
-            template += '\n\nAdditional observations:\\n'+details
+            template += '\n\nAdditional observations:\n'+details
         if extras:
-            template += '\n\nAdditional materials used:\n'+'\\n'.join('- '+x for x in extras)
+            template += '\n\nAdditional materials used:\n'+'\n'.join('- '+x for x in extras)
         if f.get('use_ai') == 'on' and client:
             try: template = polish(client,template)
             except Exception: warnings.append('AI polish failed; the edited template was preserved.')
