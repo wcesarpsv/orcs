@@ -259,6 +259,10 @@ def sst_cloud_request(method,path,payload=None):
     if not auth.startswith('Bearer '):raise PermissionError('Sign in to access the shared SST database.')
     r=http.request(method,url+'/rest/v1/'+path,headers={'apikey':key,'Authorization':auth,'Content-Type':'application/json'},json=payload,timeout=30)
     if r.status_code in (401,403):raise PermissionError('Sign in with an approved technician account.')
+    if 'inventory' in path and not r.ok:
+        if 'revision_conflict' in r.text:raise ValueError('This component changed in another session. Refresh your inventory before recording a movement.')
+        if r.status_code==409:raise ValueError('This serial is already registered. Use its existing record or contact the inventory coordinator.')
+        raise ValueError('Could not record this inventory action. Refresh your inventory and check the component status.')
     if r.status_code==409 or (r.status_code>=400 and 'revision_conflict' in r.text):raise ValueError('This SST was updated by another technician. Load it again before saving.')
     if not r.ok:
         app.logger.warning('SST cloud request returned HTTP %s',r.status_code)
@@ -341,3 +345,8 @@ def sst_recovery():
         if not r.ok:return jsonify(error='Could not send the email. Please retry later.'),502
         return jsonify(ok=True)
     except Exception:return jsonify(error='Could not reach the account service. Please retry.'),502
+
+# Inventory uses the same authenticated, approved technician identity as SST PM.
+from inventory import register_routes as register_inventory_routes
+app.config['INVENTORY_MATERIALS'] = MATERIALS
+register_inventory_routes(app, sst_cloud_request)
