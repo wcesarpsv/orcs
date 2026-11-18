@@ -52,6 +52,44 @@ def health():
 def too_large(_):
     return jsonify(error='Photos are too large. Choose smaller images and try again.'), 413
 
+
+@app.route('/api/report-template/<kind>', methods=['GET','PUT','DELETE'])
+def personal_report_template(kind):
+    import requests as http
+    if kind not in ('INSTALLATION','DEINSTALLATION','BREAKFIX WJS','PM'):
+        return jsonify(error='Unsupported report type.'),400
+    url=os.getenv('SUPABASE_URL','').rstrip('/')
+    key=os.getenv('SUPABASE_PUBLISHABLE_KEY','')
+    auth=request.headers.get('Authorization','')
+    if not url or not key:return jsonify(error='Template cloud storage is not configured.'),503
+    if not auth.startswith('Bearer '):return jsonify(error='Sign in to manage your templates.'),401
+    headers={'apikey':key,'Authorization':auth,'Content-Type':'application/json'}
+    try:
+        user=http.get(url+'/auth/v1/user',headers=headers,timeout=15)
+        if not user.ok:return jsonify(error='Session expired. Sign in again.'),401
+        uid=user.json().get('id')
+        if not uid:return jsonify(error='Could not identify technician.'),401
+        endpoint=url+'/rest/v1/orcs_report_templates'
+        params={'user_id':'eq.'+uid,'report_type':'eq.'+kind}
+        if request.method=='GET':
+            result=http.get(endpoint,headers=headers,params={**params,'select':'template_text,updated_at'},timeout=15)
+            if not result.ok:raise ValueError('Could not load saved template.')
+            rows=result.json()
+            return jsonify(template=rows[0]['template_text'] if rows else None)
+        if request.method=='DELETE':
+            result=http.delete(endpoint,headers=headers,params=params,timeout=15)
+            if not result.ok:raise ValueError('Could not restore default template.')
+            return jsonify(ok=True)
+        body=request.get_json(silent=True) or {}
+        content=body.get('template')
+        if not isinstance(content,str) or not 1<=len(content.strip())<=30000:
+            return jsonify(error='Template must contain 1 to 30,000 characters.'),400
+        result=http.post(endpoint,headers={**headers,'Prefer':'resolution=merge-duplicates,return=minimal'},params={'on_conflict':'user_id,report_type'},json={'user_id':uid,'report_type':kind,'template_text':content},timeout=15)
+        if not result.ok:raise ValueError('Could not save template.')
+        return jsonify(ok=True)
+    except (ValueError, http.RequestException) as exc:
+        return jsonify(error=str(exc)),502
+
 @app.post('/api/generate')
 def generate():
     f = request.form
