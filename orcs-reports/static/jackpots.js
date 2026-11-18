@@ -1,6 +1,6 @@
 (()=>{
 const el=id=>document.getElementById(id);let latest=null,refreshing=false,tabActive=false,timer=null;
-const tabs=['reports','jackpots','inventory'];
+const tabs=['reports','inventory','jackpots'];
 function chooseTab(name,updateHash=true){if(!tabs.includes(name))name='reports';tabActive=name==='jackpots';for(const tab of tabs){const active=tab===name;el(tab+'-view').hidden=!active;el(tab+'-tab').setAttribute('aria-selected',String(active));el(tab+'-tab').tabIndex=active?0:-1}if(updateHash)history.replaceState(null,'','#'+name);clearTimeout(timer);if(tabActive&&!document.hidden)refresh();document.dispatchEvent(new CustomEvent('orcs-tab',{detail:name}));}
 for(const name of tabs){el(name+'-tab').onclick=()=>chooseTab(name);el(name+'-tab').onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();let index=tabs.indexOf(name);index=e.key==='Home'?0:e.key==='End'?tabs.length-1:(index+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;chooseTab(tabs[index]);el(tabs[index]+'-tab').focus()}};}
 function timeText(value){if(!value)return '—';return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Toronto',dateStyle:'short',timeStyle:'medium'}).format(new Date(value*1000))+' (Toronto)'}
@@ -13,3 +13,4 @@ el('inspect-jackpot').onclick=async()=>{el('inspect-jackpot').disabled=true;el('
 setInterval(()=>{if(tabActive&&latest)render()},5000);
 document.addEventListener('visibilitychange',()=>{clearTimeout(timer);if(!document.hidden&&tabActive)refresh()});window.addEventListener('hashchange',()=>chooseTab(location.hash.slice(1),false));chooseTab(location.hash.slice(1)||document.body.dataset.initialTab||'reports',false);
 })();
+

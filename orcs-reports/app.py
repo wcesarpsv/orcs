@@ -350,3 +350,7 @@ def sst_recovery():
 from inventory import register_routes as register_inventory_routes
 app.config['INVENTORY_MATERIALS'] = MATERIALS
 register_inventory_routes(app, sst_cloud_request)
+
+
+from session_access import register_routes as register_session_routes
+register_session_routes(app)
