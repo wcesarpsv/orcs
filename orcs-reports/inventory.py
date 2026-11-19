@@ -105,3 +105,23 @@ def register_routes(app, cloud):
             saved=cloud('POST','rpc/orcs_inventory_action',{'p_action':action,'p_data':payload,'p_request_id':rid})
             return jsonify(item=saved)
         except Exception as exc:return failure(exc)
+
+    @app.get('/api/sst-kits')
+    def sst_kits_list():
+        try:
+            approved()
+            return jsonify(cloud('POST','rpc/orcs_sst_kit_overview',{}))
+        except Exception as exc:return failure(exc)
+
+    @app.post('/api/sst-kits/action')
+    def sst_kits_action():
+        try:
+            approved()
+            data=request.get_json(silent=True)
+            if not isinstance(data,dict) or not isinstance(data.get('data'),dict):
+                raise ValueError('Invalid kit request.')
+            action=data.get('action')
+            if action not in ('create','collect','return','add_component','use_component','restock'):
+                raise ValueError('Invalid kit action.')
+            return jsonify(cloud('POST','rpc/orcs_sst_kit_action',{'p_action':action,'p_data':data['data']}))
+        except Exception as exc:return failure(exc)
