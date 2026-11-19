@@ -28,7 +28,13 @@ class ReportsTest(unittest.TestCase):
         self.assertEqual(pdf.status_code,200);self.assertTrue(pdf.data.startswith(b'%PDF'))
     def test_types_and_validation(self):
         for kind in ['INSTALLATION','DEINSTALLATION']:
-            r=self.client.post('/api/generate',data={**self.base,'kind':kind})
+            data={**self.base,'kind':kind}
+            if kind=='INSTALLATION':
+                data.update(unit_sn='EMONJC123456',wjs_template='WJS Install - [Store Name] - [Serial Number]')
+                for field in ['store_front_photo','wjs_serial_photo','call_completion_photo']:
+                    photo=io.BytesIO();Image.new('RGB',(20,20),'white').save(photo,'PNG');photo.seek(0)
+                    data[field]=(photo,'required.png')
+            r=self.client.post('/api/generate',data=data)
             self.assertEqual(r.status_code,200)
         self.assertEqual(self.client.post('/api/generate',data={**self.base,'rdl':'123abc'}).status_code,400)
         self.assertEqual(self.client.post('/api/pdf',json={'sections':[]}).status_code,400)

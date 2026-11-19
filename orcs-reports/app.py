@@ -12,7 +12,7 @@ from reports import build_report, report_html, make_pdf, polish, data_url
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 20_000_000
 MATERIALS = ['CAT5 Network Cable: L63', 'Power Extension: L38A', 'Power Supply: L64', 'Power Cord: L1', 'Transceiver: L61', 'Transceiver Power: L62', 'Power Bar: L38', 'Steel Cable: L48', 'Hanging Chain: L46']
-TITLES = {'PM': [], 'INSTALLATION': [('unit', 'WJS Info')], 'DEINSTALLATION': [('unit', 'WJS Info')], 'BREAKFIX WJS': [('old', 'Old WJS'), ('new', 'New WJS')]}
+TITLES = {'SST Install': [], 'PM': [], 'INSTALLATION': [('unit', 'WJS Info')], 'DEINSTALLATION': [('unit', 'WJS Info')], 'BREAKFIX WJS': [('old', 'Old WJS'), ('new', 'New WJS')]}
 
 def normalize(upload):
     if not upload or not upload.filename:
@@ -106,6 +106,15 @@ def generate():
             return jsonify(error='Enter the reason the SST key could not be collected.'), 400
         if key == 'Return SST Key' and destination not in ('Office', 'Warehouse'):
             return jsonify(error='Select Office or Warehouse.'), 400
+    sst_install_photos = []
+    if kind == 'SST Install':
+        try:
+            for field, label in [('sst_front_photo','SST front'),('sst_call_clear_photo','Call Clear'),('sst_id_photo','SST ID')]:
+                photo=normalize(request.files.get(field))
+                if not photo:return jsonify(error='Required photo missing: '+label),400
+                sst_install_photos.append(dict(text=label,image=photo))
+        except (UnidentifiedImageError,OSError,ValueError,Image.DecompressionBombError):
+            return jsonify(error='An SST installation photo is unreadable. Replace it and retry.'),400
     try:
         call = normalize(request.files.get('call_photo'))
         units = [dict(key=k, title=t, item=f.get(k+'_item', '').strip(), pn=f.get(k+'_pn', '').strip(), sn=f.get(k+'_sn', '').strip(), image=normalize(request.files.get(k+'_photo'))) for k,t in TITLES[kind]]
@@ -170,6 +179,17 @@ def generate():
             warnings.append('AI polish is unavailable; original notes were preserved.')
     extras = [m for m in f.getlist('materials') if m in MATERIALS]+[x.strip() for x in f.get('custom','').splitlines() if x.strip()]
     sections = build_report(kind,place,rdl,details,units,extras,key,reason,destination)
+    if kind == 'SST Install':
+        sst_template=f.get('sst_install_template','').strip()
+        if len(sst_template)>30000:return jsonify(error='SST Install template must contain at most 30,000 characters.'),400
+        if sst_template:
+            replacements={'[Store Name]':place,'[RDL]':re.sub(r'^RDL\s*:\s*','',rdl,flags=re.I)}
+            for marker,value in replacements.items():
+                sst_template=re.sub(re.escape(marker),lambda match,value=value:value,sst_template,flags=re.I)
+            if details:sst_template+='\n\nAdditional observations:\n'+details
+            if extras:sst_template+='\n\nAdditional materials used:\n'+'\n'.join('- '+x for x in extras)
+            sections=[dict(text=sst_template)]
+        sections.extend(sst_install_photos)
     if kind == 'INSTALLATION':
         replacements = {'[Store Name]':place, '[RDL]':rdl, '[Serial Number]':units[0]['sn'], '[Additional observations]':details}
         for marker, value in replacements.items():

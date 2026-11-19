@@ -31,12 +31,17 @@ def build_report(kind, place, rdl, details, units, extras, key_collected=None, k
             raise ValueError("Select where the SST key will be returned.")
     reference = re.sub(r"^RDL\s*:\s*", "", rdl, flags=re.I).strip()
     heading = {
-        "PM": "PM completed", "INSTALLATION": "WJS Large Carmanah - Installation",
+        "SST Install": "SST Install completed", "PM": "PM completed", "INSTALLATION": "WJS Large Carmanah - Installation",
         "DEINSTALLATION": "WJS Sign Deinstallation", "BREAKFIX WJS": "WJS Breakfix"
     }[kind]
     sections = [{"text": f"{heading} - {place} (RDL: {reference}) - Summary"}]
     if kind == "PM":
         body = details + "\n\nBurster bins, rollers, and all related peripherals were cleaned.\nSerial numbers for all components were recorded for database entry.\nAll hardware components, including the pin pad, were tested and verified as operational."
+    elif kind == "SST Install":
+        body = (f"The SST installation has been completed successfully at {place}"
+                "\n\nUpon inspection, no scratches or damage were observed on either the machine or the surrounding floor area."
+                "\n\nThe SST key was handed over to the retailer")
+        if details: body += "\n\nAdditional observations:\n" + details
     elif kind == "INSTALLATION":
         body = "Upon arrival at the site, the retailer indicated the preferred installation location and desired height for the sign.\n\n" + (details or "No issues reported.")
     elif kind == "DEINSTALLATION":
