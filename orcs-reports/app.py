@@ -205,12 +205,19 @@ def generate():
     if kind == 'INSTALLATION':
         try:
             photos = [('Store Front View', normalize(request.files.get('store_front_photo'))), ('WJS Serial Number', normalize(request.files.get('wjs_serial_photo'))), ('Call Completion', normalize(request.files.get('call_completion_photo')))]
-            photos += [('Additional Photo '+str(i+1), normalize(upload)) for i,upload in enumerate(request.files.getlist('additional_photos')) if upload and upload.filename]
             if any(not img for _,img in photos):
                 return jsonify(error='An installation photo could not be read.'), 400
             sections.extend(dict(text=label,image=img) for label,img in photos)
         except (UnidentifiedImageError,OSError,ValueError,Image.DecompressionBombError):
             return jsonify(error='An installation photo is unreadable.'), 400
+    try:
+        for i,upload in enumerate(request.files.getlist('additional_photos')):
+            if upload and upload.filename:
+                image=normalize(upload)
+                if not image:return jsonify(error='An additional photo could not be read.'),400
+                sections.append(dict(text='Additional Photo '+str(i+1),image=image))
+    except (UnidentifiedImageError,OSError,ValueError,Image.DecompressionBombError):
+        return jsonify(error='An additional photo is unreadable. Replace it and retry.'),400
     # Encode photographs once for both the preview and PDF download request.
     serializable = [dict(text=s['text'], image=base64.b64encode(s['image']).decode() if s.get('image') else None) for s in sections]
     return jsonify(html=report_html(sections), plain='\n\n'.join(s['text'] for s in sections), sections=serializable, warnings=warnings, extracted=extracted, filename=kind.lower().replace(' ','_')+'_report')

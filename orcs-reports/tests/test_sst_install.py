@@ -57,3 +57,28 @@ def test_location_required(monkeypatch):
     monkeypatch.delenv('OPENAI_API_KEY',raising=False)
     data=payload();data['place']=''
     assert app.test_client().post('/api/generate',data=data).status_code==400
+
+
+def test_additional_photos_and_pdf(monkeypatch):
+    monkeypatch.delenv('OPENAI_API_KEY',raising=False)
+    data=payload();data['additional_photos']=[photo(),photo()]
+    c=app.test_client();r=c.post('/api/generate',data=data)
+    assert r.status_code==200
+    images=[s for s in r.json['sections'] if s['image']]
+    assert [s['text'] for s in images]==['SST front','Call Clear','SST ID','Additional Photo 1','Additional Photo 2']
+    assert c.post('/api/pdf',json={'sections':r.json['sections']}).status_code==200
+
+
+def test_unreadable_additional_photo(monkeypatch):
+    monkeypatch.delenv('OPENAI_API_KEY',raising=False)
+    data=payload();data['additional_photos']=[(BytesIO(b'broken'),'bad.jpg')]
+    r=app.test_client().post('/api/generate',data=data)
+    assert r.status_code==400 and 'additional photo is unreadable' in r.json['error']
+
+
+def test_additional_photo_for_pm(monkeypatch):
+    monkeypatch.delenv('OPENAI_API_KEY',raising=False)
+    data=dict(kind='PM',place='Test Store',rdl='12345',key_status='Yes',additional_photos=[photo(),photo()])
+    r=app.test_client().post('/api/generate',data=data)
+    assert r.status_code==200
+    assert [s['text'] for s in r.json['sections'] if s['image']]==['Additional Photo 1','Additional Photo 2']
