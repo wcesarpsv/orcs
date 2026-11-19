@@ -56,7 +56,7 @@ def too_large(_):
 @app.route('/api/report-template/<kind>', methods=['GET','PUT','DELETE'])
 def personal_report_template(kind):
     import requests as http
-    if kind not in ('INSTALLATION','DEINSTALLATION','BREAKFIX WJS','PM'):
+    if kind not in ('INSTALLATION','SST Install','DEINSTALLATION','BREAKFIX WJS','PM'):
         return jsonify(error='Unsupported report type.'),400
     url=os.getenv('SUPABASE_URL','').rstrip('/')
     key=os.getenv('SUPABASE_PUBLISHABLE_KEY','')

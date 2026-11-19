@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id),form=$('report-form');let generated=null,busy=false;
-function updateType(){const kind=$('kind').value,titles=kind==='BREAKFIX WJS'?[['old','Old WJS'],['new','New WJS']]:['INSTALLATION','DEINSTALLATION'].includes(kind)?[['unit','WJS Info']]:[];$('units').hidden=!titles.length;$('key-fields').hidden=kind!=='PM';$('key-status').required=kind==='PM';$('unit-fields').replaceChildren();$('wjs-install-photos').hidden=kind!=='INSTALLATION';$('sst-install-fields').hidden=kind!=='SST Install';$('additional-report-photos').hidden=['SST PM','EXPENSE REPORT'].includes(kind);for(const name of ['sst_front_photo','sst_call_clear_photo','sst_id_photo']){form.elements[name].required=kind==='SST Install';form.elements[name].disabled=kind!=='SST Install';}$('wjs-report-template').hidden=kind!=='INSTALLATION';$('final-editor').hidden=true;$('confirm-wjs-install').hidden=true;for(const [key,title] of titles){const div=document.createElement('div');div.innerHTML=kind==='INSTALLATION'?`<h3>WJS Equipment</h3><label>Equipment source<select id="wjs-source"><option value="inventory">My Inventory</option><option value="manual">Manual entry</option></select></label><label id="wjs-inventory-wrap">Available WJS<select id="wjs-inventory-select"><option value="">Loading inventory…</option></select></label><label>S/N (Serial)<input name="unit_sn" maxlength="200" required></label><label>Call reference for inventory movement<input name="wjs_call_ref" maxlength="100" placeholder="Call / ticket number"></label>`:`<h3>${title}</h3><label class="upload">Label / serial photo<input type="file" name="${key}_photo" accept="image/jpeg,image/png"><img hidden alt="${title} label preview"></label><label>Item<input name="${key}_item" maxlength="200"></label><div class="two"><label>P/N<input name="${key}_pn" maxlength="200"></label><label>S/N (Serial)<input name="${key}_sn" maxlength="200"></label></div>`;$('unit-fields').append(div)}if(kind==='INSTALLATION')setupWjsInventory();updateKey();if(typeof toggleExpenses==='function')toggleExpenses();if(typeof toggleSstPm==='function')toggleSstPm()}
+function updateType(){const kind=$('kind').value,titles=kind==='BREAKFIX WJS'?[['old','Old WJS'],['new','New WJS']]:['INSTALLATION','DEINSTALLATION'].includes(kind)?[['unit','WJS Info']]:[];$('units').hidden=!titles.length;$('key-fields').hidden=kind!=='PM';$('key-status').required=kind==='PM';$('unit-fields').replaceChildren();$('wjs-install-photos').hidden=kind!=='INSTALLATION';$('sst-install-fields').hidden=kind!=='SST Install';$('sst-install-report-template').hidden=kind!=='SST Install';$('additional-report-photos').hidden=['SST PM','EXPENSE REPORT'].includes(kind);for(const name of ['sst_front_photo','sst_call_clear_photo','sst_id_photo']){form.elements[name].required=kind==='SST Install';form.elements[name].disabled=kind!=='SST Install';}$('wjs-report-template').hidden=kind!=='INSTALLATION';$('final-editor').hidden=true;$('confirm-wjs-install').hidden=true;for(const [key,title] of titles){const div=document.createElement('div');div.innerHTML=kind==='INSTALLATION'?`<h3>WJS Equipment</h3><label>Equipment source<select id="wjs-source"><option value="inventory">My Inventory</option><option value="manual">Manual entry</option></select></label><label id="wjs-inventory-wrap">Available WJS<select id="wjs-inventory-select"><option value="">Loading inventory…</option></select></label><label>S/N (Serial)<input name="unit_sn" maxlength="200" required></label><label>Call reference for inventory movement<input name="wjs_call_ref" maxlength="100" placeholder="Call / ticket number"></label>`:`<h3>${title}</h3><label class="upload">Label / serial photo<input type="file" name="${key}_photo" accept="image/jpeg,image/png"><img hidden alt="${title} label preview"></label><label>Item<input name="${key}_item" maxlength="200"></label><div class="two"><label>P/N<input name="${key}_pn" maxlength="200"></label><label>S/N (Serial)<input name="${key}_sn" maxlength="200"></label></div>`;$('unit-fields').append(div)}if(kind==='INSTALLATION')setupWjsInventory();updateKey();if(typeof toggleExpenses==='function')toggleExpenses();if(typeof toggleSstPm==='function')toggleSstPm()}
 const WJS_TEMPLATE=`WJS Large Carmanah - Installation\nStore: [Store Name]\nRDL: [RDL]\n\nSummary:\nUpon arrival at the site, the retailer indicated the preferred installation location and desired height for the sign.\n\n[Additional observations]\n\nWJS Info:\nS/N: [Serial Number]\n\nAfter completion, I explained the work performed to the retailer and demonstrated that the equipment was operating correctly.`;
 const templateInput=$('wjs-template-text');
 const templateStatus=$('report-template-status');
@@ -46,6 +46,50 @@ document.addEventListener('orcs-session',e=>{
   if(next!==templateUser){templateDirty=false;loadPersonalTemplate()}
 });
 loadPersonalTemplate();
+// SST Install follows the same account-owned template workflow, with a separate report key.
+(()=>{
+const input=$('sst-install-template'),message=$('sst-install-template-status'),defaultText=input.value;
+const endpoint='/api/report-template/'+encodeURIComponent('SST Install');
+let generation=0,dirty=false,owner='';
+async function load(){
+ const version=++generation,token=templateToken();owner=token;
+ // Clear another user's wording before starting an asynchronous account switch.
+ input.value=defaultText;dirty=false;
+ if(!token){message.textContent='Sign in to load or save your personal template.';return}
+ message.textContent='Loading your saved template…';
+ try{
+  const response=await fetch(endpoint,{headers:{Authorization:'Bearer '+token},cache:'no-store'}),data=await response.json();
+  if(version!==generation||token!==templateToken())return;
+  if(!response.ok)throw Error(data.error||'Unable to load template.');
+  if(!dirty)input.value=data.template||defaultText;
+  message.textContent=dirty?'Unsaved changes. Save Template to reuse this wording.':data.template?'Your personal template loaded.':'Using the default ORCS template.';
+ }catch(error){if(version===generation&&token===templateToken())message.textContent=error.message}
+}
+input.addEventListener('input',()=>{dirty=true;message.textContent='Unsaved changes. Save Template to reuse this wording.'});
+$('save-sst-install-template').onclick=async()=>{
+ const token=templateToken();if(!token){message.textContent='Sign in before saving your template.';return}
+ const value=input.value;if(!value.trim()){message.textContent='Enter template text first.';return}
+ const button=$('save-sst-install-template');button.disabled=true;const version=generation;
+ try{
+  const response=await fetch(endpoint,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({template:value})}),data=await response.json();
+  if(version!==generation||token!==templateToken())return;
+  if(!response.ok)throw Error(data.error||'Save failed.');
+  dirty=input.value!==value;message.textContent=dirty?'Saved. Your latest edits are not saved yet.':'Personal template saved to your account.';
+ }catch(error){if(version===generation&&token===templateToken())message.textContent=error.message}finally{button.disabled=false}
+};
+$('restore-sst-install-template').onclick=async()=>{
+ const token=templateToken();if(!token){message.textContent='Sign in to restore your saved template.';return}
+ if(!confirm('Restore the original SST Install template? Your saved personal SST Install version will be deleted.'))return;
+ const button=$('restore-sst-install-template');button.disabled=true;const version=generation;
+ try{
+  const response=await fetch(endpoint,{method:'DELETE',headers:{Authorization:'Bearer '+token}}),data=await response.json();
+  if(version!==generation||token!==templateToken())return;
+  if(!response.ok)throw Error(data.error||'Restore failed.');
+  input.value=defaultText;dirty=false;message.textContent='Default ORCS template restored.';
+ }catch(error){if(version===generation&&token===templateToken())message.textContent=error.message}finally{button.disabled=false}
+};
+document.addEventListener('orcs-session',()=>{if(templateToken()!==owner)load()});load();
+})();
 let additionalPhotos=[];const additionalInput=form.elements.additional_photos;const photoList=$('additional-photo-list');function renderAdditionalPhotos(){photoList.replaceChildren();const count=document.createElement('p');count.textContent=additionalPhotos.length+' additional photo(s) selected';photoList.append(count);additionalPhotos.forEach((file,index)=>{const row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:10px;margin:8px 0';const image=document.createElement('img');const url=URL.createObjectURL(file);image.src=url;image.alt=file.name;image.style.cssText='width:76px;height:64px;object-fit:cover';image.onload=()=>URL.revokeObjectURL(url);const label=document.createElement('span');label.textContent=file.name;label.style.overflowWrap='anywhere';const remove=document.createElement('button');remove.type='button';remove.textContent='Remove';remove.onclick=()=>{additionalPhotos.splice(index,1);renderAdditionalPhotos()};row.append(image,label,remove);photoList.append(row)})}additionalInput.addEventListener('change',()=>{additionalPhotos.push(...Array.from(additionalInput.files));additionalInput.value='';renderAdditionalPhotos()});renderAdditionalPhotos();
 let selectedWjs=null;async function setupWjsInventory(){const source=$('wjs-source'),select=$('wjs-inventory-select'),sn=form.elements.unit_sn;source.onchange=()=>{selectedWjs=null;$('wjs-inventory-wrap').hidden=source.value==='manual';sn.readOnly=false;sn.value='';if(source.value==='inventory')loadWjsInventory()};select.onchange=()=>{const row=JSON.parse(select.selectedOptions[0]?.dataset.item||'null');selectedWjs=row;sn.value=row?.serial||'';sn.readOnly=!!row};await loadWjsInventory()}
 async function loadWjsInventory(){const select=$('wjs-inventory-select');if(!select)return;select.replaceChildren(new Option('Select an available WJS',''));const token=sessionStorage.getItem('orcs_sst_token');if(!token){select.add(new Option('Sign in to load inventory',''));return}try{let offset=0;do{const r=await fetch('/api/inventory/items?offset='+offset,{headers:{Authorization:'Bearer '+token}});if(!r.ok)throw Error('Could not load inventory');const d=await r.json();for(const item of d.items||[])if(item.status==='Available'&&/CARMANAH/i.test(item.product||'')){const option=new Option(item.product+' — '+item.serial,item.id);option.dataset.item=JSON.stringify(item);select.add(option)}offset=d.next_offset??null}while(offset!==null)}catch(e){select.add(new Option(e.message,''))}}
