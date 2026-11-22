@@ -10,6 +10,8 @@ from openai import OpenAI
 from reports import build_report, report_html, make_pdf, polish, data_url
 
 app = Flask(__name__)
+from jackpots_api import register_routes as register_jackpot_routes
+register_jackpot_routes(app)
 app.config['MAX_CONTENT_LENGTH'] = 20_000_000
 MATERIALS = ['CAT5 Network Cable: L63', 'Power Extension: L38A', 'Power Supply: L64', 'Power Cord: L1', 'Transceiver: L61', 'Transceiver Power: L62', 'Power Bar: L38', 'Steel Cable: L48', 'Hanging Chain: L46']
 TITLES = {'SST Install': [], 'PM': [], 'INSTALLATION': [('unit', 'WJS Info')], 'DEINSTALLATION': [('unit', 'WJS Info')], 'BREAKFIX WJS': [('old', 'Old WJS'), ('new', 'New WJS')]}
