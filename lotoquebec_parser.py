@@ -49,7 +49,7 @@ def parse_jackpots(html):
     gold_candidates = []
     for draw_match, block in blocks:
         # Gold Ball is the other draw card; never mistake its prize for Lotto Max.
-        is_gold_card = bool(re.search(r"\\bThe\\s+Gold\\s+Ball\\b", block, re.I))
+        is_gold_card = bool(re.search(r"\bThe\s+Gold\s+Ball\b", block, re.I))
         if not is_gold_card:
             amounts = AMOUNT_RE.findall(block)
             max_counts = COUNT_RE.findall(block)
