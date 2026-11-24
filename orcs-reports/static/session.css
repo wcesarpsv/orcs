@@ -1,1 +1,15 @@
 .account-area{display:flex;flex-direction:column;align-items:flex-end;gap:.35rem;max-width:100%}.account-controls{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:.6rem}.account-identity{display:flex;flex-direction:column;overflow-wrap:anywhere}.account-identity small{opacity:.8}.account-area button{padding:.5rem .8rem;font-size:.85rem}.account-area [role=status]{margin:0;font-size:.8rem;max-width:24rem}.account-area [hidden]{display:none!important}@media(max-width:600px){header{flex-wrap:wrap;gap:1rem}.account-area{align-items:flex-start;width:100%}.account-controls{justify-content:flex-start}}
+
+/* Left navigation drawer, kept separate from account controls. */
+.header-start{display:flex;align-items:center;gap:14px;min-width:0}
+#workspace-menu-toggle{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:44px;height:44px;padding:10px;color:#fff;background:transparent;border:1px solid #68899d;border-radius:9px}
+#workspace-menu-toggle:hover{background:#25465f}
+#workspace-menu{position:fixed;inset:0 auto 0 0;margin:0;width:min(340px,88vw);height:100dvh;max-height:100dvh;max-width:88vw;padding:24px;border:0;border-radius:0 18px 18px 0;background:#fff;color:#173047;overflow-y:auto;box-shadow:12px 0 40px #112d4633}
+#workspace-menu::backdrop{background:#0b203a88}
+.workspace-menu-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}
+#workspace-menu-close{width:44px;height:44px;padding:0;font-size:26px}
+#workspace-menu nav{display:grid;gap:10px}
+#workspace-menu nav a,#workspace-menu nav button{display:block;width:100%;padding:15px 16px;margin:0;border:1px solid #dce6ea;border-radius:9px;background:#f6fafb;color:#173047;text-decoration:none;font:600 14px Arial;text-align:left;line-height:1.4}
+#workspace-menu nav a:hover,#workspace-menu nav button:hover{background:#e8f4f1;color:#087c77}
+#workspace-menu-toggle:focus-visible,#workspace-menu a:focus-visible,#workspace-menu button:focus-visible{outline:3px solid #69b9b1;outline-offset:3px}
+@media(max-width:600px){.header-start{gap:10px}.header-start .brand{font-size:20px}}
