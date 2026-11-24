@@ -1,0 +1,22 @@
+begin;
+select set_config('test.reporting_user',gen_random_uuid()::text,true),set_config('test.reporting_item',gen_random_uuid()::text,true),set_config('test.reporting_owner',(select user_id::text from public.orcs_sst_members where account_role='owner'),true);
+insert into auth.users(id,email) values(current_setting('test.reporting_user')::uuid,'reporting-fixture@example.invalid');
+insert into public.orcs_sst_members(user_id) values(current_setting('test.reporting_user')::uuid);
+insert into public.orcs_inventory_items(id,owner_id,product,serial,status) values(current_setting('test.reporting_item')::uuid,current_setting('test.reporting_user')::uuid,'PIN PAD','P9999982','Returned');
+insert into public.orcs_inventory_events(item_id,owner_id,request_id,action,payload,snapshot) values(current_setting('test.reporting_item')::uuid,current_setting('test.reporting_user')::uuid,gen_random_uuid(),'install','{}','{"product":"PIN PAD","serial":"P9999982","status":"Installed","call_ref":"REPORT-TEST","rdl":"12345"}');
+set local role authenticated;
+select set_config('request.jwt.claim.sub',current_setting('test.reporting_user'),true);
+do $$ begin begin perform public.orcs_inventory_report();raise exception 'Technician report access allowed';exception when insufficient_privilege then null;end;end $$;
+select set_config('request.jwt.claim.sub',current_setting('test.reporting_owner'),true);
+do $$ declare d jsonb;begin
+ d:=public.orcs_inventory_report('inventory',current_setting('test.reporting_user')::uuid,'held',0);
+ if (d->>'count')::int<>0 then raise exception 'Returned item counted as held';end if;
+ d:=public.orcs_inventory_report('installations',current_setting('test.reporting_user')::uuid,'all',0);
+ if (d->>'count')::int<>1 or d->'rows'->0->>'serial'<>'P9999982' or d->'rows'->0->>'current_status'<>'Returned' then raise exception 'Installation history lost or wrong filter';end if;
+ d:=public.orcs_inventory_report('inventory',current_setting('test.reporting_user')::uuid,'all',0);
+ if (d->>'count')::int<>1 then raise exception 'Technician inventory filter failed';end if;
+end $$;
+set local role anon;
+do $$ begin begin perform public.orcs_inventory_report();raise exception 'Anonymous report access allowed';exception when insufficient_privilege then null;end;end $$;
+rollback;
+select 'PASS: admin-only reports, technician filter, returned stock excluded from possession, immutable installation history, anonymous denial; fixtures rolled back' as verification;

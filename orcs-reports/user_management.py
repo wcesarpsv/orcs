@@ -23,6 +23,23 @@ def register_routes(app):
     @app.get('/manage-users')
     def manage_users_page():return render_template('manage_users.html')
 
+    @app.get('/inventory-reports')
+    def inventory_reports_page():return render_template('inventory_reports.html')
+
+    @app.get('/api/admin/inventory-report')
+    def inventory_reports_api():
+        try:
+            owner=request.args.get('technician','')
+            offset=int(request.args.get('offset','0'))
+            data=upstream('/rest/v1/rpc/orcs_inventory_report',{
+                'p_kind':request.args.get('kind','inventory'),
+                'p_owner':str(UUID(owner)) if owner else None,
+                'p_status':request.args.get('status','held'),'p_offset':offset})
+            return jsonify(data)
+        except PermissionError as exc:return jsonify(error=str(exc)),403
+        except (ValueError,TypeError):return jsonify(error='Invalid report filter.'),400
+        except (http.RequestException,RuntimeError):return jsonify(error='Could not load inventory reports. Retry later.'),502
+
     @app.route('/api/admin/users',methods=['GET','POST','PATCH'])
     def manage_users_api():
         try:
