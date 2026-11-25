@@ -22,7 +22,7 @@ def normalize_id(value):
     if not re.fullmatch(r'\d{6}|\d{10}',raw):raise ValueError('Scan the 10-digit SST serial or enter the 6-digit SST ID.')
     return raw[-6:]
 
-def prepare(data):
+def prepare(data, *, for_excel=False):
     if not isinstance(data,dict):raise ValueError('Invalid SST PM data.')
     sst_id=normalize_id(data.get('sst_id'))
     place=str(data.get('place') or '').strip()[:200];rdl=str(data.get('rdl') or '').strip()
@@ -61,10 +61,12 @@ def prepare(data):
         status='Not installed' if absent else ('Optional — not provided' if name=='Key' and not ref and not physical else ('Previously Swapped / Not Documented' if mismatch else 'OK'))
         rows.append(dict(name=name,reference=ref,physical=physical,absent=absent,test=test,reason=reason,confirmed=bool(r.get('confirmed')),status=status))
     key=data.get('key_status')
-    if key not in ('Yes','No','Return SST Key'):raise ValueError('Select the SST key collection status.')
+    if key not in ('Yes','No','Return SST Key'):
+        if for_excel and not key:key='Not recorded'
+        else:raise ValueError('Select the SST key collection status.')
     reason=str(data.get('key_reason') or '').strip()[:2000];destination=data.get('key_destination','')
-    if key=='No' and not reason:raise ValueError('Explain why the SST key could not be collected.')
-    if key=='Return SST Key' and destination not in ('Office','Warehouse'):raise ValueError('Select the SST key return destination.')
+    if key=='No' and not reason and not for_excel:raise ValueError('Explain why the SST key could not be collected.')
+    if key=='Return SST Key' and destination not in ('Office','Warehouse') and not for_excel:raise ValueError('Select the SST key return destination.')
     photos=data.get('photos',[])
     if not isinstance(photos,list) or len(photos)>8:raise ValueError('Use at most 8 report photos.')
     validated_photos=[]
@@ -139,7 +141,7 @@ def excel(pm):
         put(tag,f'A{row}','*'+serial+'*' if serial else '',f'IF(Data!G{source}="","","*"&Data!G{source}&"*")')
         put(tag,f'B{row+1}',r['name'],f'Data!I{source}')
         put(tag,f'A{row+2}',pm['sst_id'],'Data!J3')
-    for row,(label,value) in enumerate([('SST PM', 'Completed' if pm['completed'] else 'Not completed — failed tests'),('SST ID',pm['sst_id']),('RDL',pm['rdl']),('Store',pm['place']),('Technician',pm['technician']),('PM date',pm['date']),('Key collection status',pm['key_status']),('Key return destination',pm['key_destination']),('Key observation',pm['key_reason']),('PM notes',pm['notes'])],1):
+    for row,(label,value) in enumerate([('SST PM', 'Component serial export — PM summary not finalized' if pm['key_status']=='Not recorded' else ('Completed' if pm['completed'] else 'Not completed — failed tests')),('SST ID',pm['sst_id']),('RDL',pm['rdl']),('Store',pm['place']),('Technician',pm['technician']),('PM date',pm['date']),('Key collection status',pm['key_status']),('Key return destination',pm['key_destination']),('Key observation',pm['key_reason']),('PM notes',pm['notes'])],1):
         put(details,f'A{row}',label);put(details,f'B{row}',value)
     for col,value in zip('ABCD',['Component','Test result','Double Check','Observation']):put(details,col+'12',value)
     for row,r in enumerate(pm['components'],13):

@@ -313,9 +313,9 @@ def sst_config():
 def sst_report():
     from sst_pm import prepare,sections,labels,excel
     payload=request.get_json(silent=True)
-    try:pm=prepare(payload)
+    output=payload.get('format','preview') if isinstance(payload,dict) else 'preview'
+    try:pm=prepare(payload,for_excel=output=='xlsx')
     except (ValueError,TypeError) as e:return jsonify(error=str(e)),400
-    output=payload.get('format','preview')
     if output=='xlsx':return send_file(BytesIO(excel(pm)),mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',as_attachment=True,download_name='DC_SST_Components_RDL_'+pm['rdl']+'.xlsx')
     if output=='labels':return send_file(BytesIO(labels(pm)),mimetype='application/pdf',as_attachment=True,download_name='SST_'+pm['sst_id']+'_labels_4x1.pdf')
     parts=sections(pm)
@@ -332,6 +332,15 @@ def sst_extract():
         if not image:return jsonify(error='Select a photo.'),400
     except Exception:return jsonify(error='Unreadable image.'),400
     mode=request.form.get('mode','list')
+    if mode not in ('place','list','label'):return jsonify(error='Select a valid photo reading mode.'),400
+    if mode=='place':
+        try:
+            result=extract(OpenAI(timeout=60,max_retries=0),image,'place')
+            rdl=re.sub(r'^RDL\s*:\s*','',result.get('rdl',''),flags=re.I).strip()
+            return jsonify(place_name=result.get('place_name','')[:200],rdl=rdl if re.fullmatch(r'[0-9]{1,12}',rdl) else '')
+        except Exception:
+            app.logger.warning('SST call photo extraction failed')
+            return jsonify(error='Could not read the call photo. Retry or enter the store name and RDL manually.'),502
     instruction=('Read the SST Component List. Return JSON with keys sst_serial (full SST serial), components (object with these exact keys: '+', '.join(COMPONENTS)+'). Values must be serial number strings only. Key is optional. Preserve leading zeros and case. Use empty strings for unreadable values.' if mode=='list' else 'Read the serial number on this component label. Return JSON with one key sn. Preserve characters and leading zeros exactly. Use empty string if unreadable.')
     try:
         client=OpenAI(timeout=60,max_retries=0)
