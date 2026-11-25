@@ -40,7 +40,7 @@ def prepare(data, *, for_excel=False):
     for name in COMPONENTS:
         r=by_name[name];absent=r.get('absent') is True
         if absent and name not in ('Router','Key'):raise ValueError(name+' cannot be marked Not installed.')
-        ref=str(r.get('reference') or '').strip();physical=str(r.get('physical') or '').strip()
+        ref=str(r.get('reference') or '').strip().upper();physical=str(r.get('physical') or '').strip().upper()
         if absent:
             if ref or physical:raise ValueError(name+': clear serials before marking Not installed.')
         else:
