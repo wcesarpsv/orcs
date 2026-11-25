@@ -137,10 +137,22 @@ finalText.addEventListener('input',()=>{
   applyFinalEdits();
 });
 
+// Copy Text excludes photo-only captions across all report types while retaining service details.
+function reportTextWithoutPhotoCaptions(){
+  if(!generated)return '';
+  const photoCaption=/^(?:(?:additional|service|attached|before|after|old|new|front|rear|store|wjs|sst|call|completion|info|label|serial|equipment|component)\\s+)*(?:photo|picture|image|foto)(?:\\s*(?:#|no\\.?|number|:|-)?\\s*\\d+)?(?:\\s*[:\\-]\\s*(?:photo|picture|image|foto|label))?$/i;
+  const sections=Array.isArray(generated.sections)?generated.sections:[];
+  if(!sections.length)return generated.plain||'';
+  return sections.map(section=>{
+    const value=String(section.text||'');
+    if(!section.image)return value;
+    return value.split(/\\r?\\n/).filter(line=>!photoCaption.test(line.trim())).join('\\n').trim();
+  }).filter(Boolean).join('\\n\\n');
+}
 function selectReport(){const range=document.createRange();range.selectNodeContents($('report'));const s=window.getSelection();s.removeAllRanges();s.addRange(range)}
-function legacyCopy(rich){const handler=e=>{e.clipboardData.setData('text/plain',generated.plain);if(rich)e.clipboardData.setData('text/html',generated.html);e.preventDefault()};document.addEventListener('copy',handler);selectReport();try{return document.execCommand('copy')}finally{document.removeEventListener('copy',handler)}}
+function legacyCopy(rich){const handler=e=>{e.clipboardData.setData('text/plain',rich?generated.plain:reportTextWithoutPhotoCaptions());if(rich)e.clipboardData.setData('text/html',generated.html);e.preventDefault()};document.addEventListener('copy',handler);selectReport();try{return document.execCommand('copy')}finally{document.removeEventListener('copy',handler)}}
 $('copy-rich').onclick=async()=>{if(!generated)return;try{await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([generated.html],{type:'text/html'}),'text/plain':new Blob([generated.plain],{type:'text/plain'})})]);$('copy-status').textContent='Formatted report copied. Check photos after pasting.'}catch{$('copy-status').textContent=legacyCopy(true)?'Formatted copy requested. Check photos after pasting.':'Report selected. Copy manually or download PDF.'}};
-$('copy-text').onclick=async()=>{if(!generated)return;try{await navigator.clipboard.writeText(generated.plain);$('copy-status').textContent='Text copied.'}catch{$('copy-status').textContent=legacyCopy(false)?'Text copied.':'Use Select report and copy manually.'}};
+$('copy-text').onclick=async()=>{if(!generated)return;try{await navigator.clipboard.writeText(reportTextWithoutPhotoCaptions());$('copy-status').textContent='Text copied.'}catch{$('copy-status').textContent=legacyCopy(false)?'Text copied.':'Use Select report and copy manually.'}};
 $('select').onclick=()=>{selectReport();$('copy-status').textContent='Report selected. Use your browser Copy command.'};
 function download(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000)}
 $('txt').onclick=()=>{if(generated)download(new Blob([generated.plain],{type:'text/plain;charset=utf-8'}),generated.filename+'.txt')};
